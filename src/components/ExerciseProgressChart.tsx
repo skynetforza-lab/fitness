@@ -10,16 +10,14 @@ import {
 } from "recharts";
 import { format, parseISO } from "date-fns";
 import { fetchExercises, fetchSetsForExercise } from "@/lib/db";
-import { computePRs, dailyBestE1RM } from "@/lib/pr";
+import { computePRs, dailyBestWeight } from "@/lib/pr";
 import type { Exercise } from "@/lib/types";
 
 export default function ExerciseProgressChart() {
   const [exercises, setExercises] = useState<Exercise[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [points, setPoints] = useState<{ date: string; e1rm: number }[]>([]);
-  const [prs, setPRs] = useState<{ maxWeight: number; maxReps: number; maxE1RM: number } | null>(
-    null,
-  );
+  const [points, setPoints] = useState<{ date: string; weight: number }[]>([]);
+  const [prs, setPRs] = useState<{ maxWeight: number; maxReps: number } | null>(null);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
@@ -35,7 +33,7 @@ export default function ExerciseProgressChart() {
     setLoading(true);
     fetchSetsForExercise(selectedId)
       .then((sets) => {
-        setPoints(dailyBestE1RM(sets));
+        setPoints(dailyBestWeight(sets));
         setPRs(computePRs(sets));
       })
       .finally(() => setLoading(false));
@@ -54,7 +52,7 @@ export default function ExerciseProgressChart() {
   return (
     <div className="card p-4">
       <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-        <h3 className="font-semibold">Exercise progression (est. 1RM)</h3>
+        <h3 className="font-semibold">Exercise progression</h3>
         <select
           value={selectedId ?? ""}
           onChange={(e) => setSelectedId(e.target.value || null)}
@@ -74,10 +72,9 @@ export default function ExerciseProgressChart() {
       </div>
 
       {prs && (
-        <div className="mb-3 grid grid-cols-3 gap-2 text-center">
+        <div className="mb-3 grid grid-cols-2 gap-2 text-center">
           <PRBadge label="Max weight" value={`${prs.maxWeight} kg`} />
           <PRBadge label="Max reps" value={`${prs.maxReps}`} />
-          <PRBadge label="Best e1RM" value={`${Math.round(prs.maxE1RM * 10) / 10} kg`} />
         </div>
       )}
 
@@ -112,11 +109,11 @@ export default function ExerciseProgressChart() {
               />
               <Tooltip
                 labelFormatter={(d: string) => format(parseISO(d), "EEE, MMM d")}
-                formatter={(v: number) => [`${v} kg`, "e1RM"]}
+                formatter={(v: number) => [`${v} kg`, "Max weight"]}
               />
               <Line
                 type="monotone"
-                dataKey="e1rm"
+                dataKey="weight"
                 stroke="#0d9eff"
                 strokeWidth={2}
                 dot={{ r: 4, fill: "#0d9eff" }}

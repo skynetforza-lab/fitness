@@ -64,6 +64,13 @@ export const HABIT_KEYS: HabitKey[] = [
   "clean_eating",
 ];
 
+// ---------- User profile ----------
+export interface UserProfile {
+  user_id: string;
+  display_name: string;
+  partner_id: string | null;
+}
+
 // ---------- Workout schedules ----------
 export interface WorkoutSchedule {
   id: string;

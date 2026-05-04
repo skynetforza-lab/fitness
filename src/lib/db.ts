@@ -8,6 +8,7 @@ import type {
   WorkoutSession,
   WorkoutSchedule,
   ScheduleExercise,
+  UserProfile,
 } from "./types";
 
 async function uid(): Promise<string> {
@@ -265,4 +266,112 @@ export async function fetchLastWorkoutSets(
     .filter((s) => s.date === latestDate)
     .sort((a, b) => a.set_number - b.set_number)
     .map(({ set_number, weight_kg, reps }) => ({ set_number, weight_kg, reps }));
+}
+
+// ---------- User profiles ----------
+
+export async function fetchMyProfile(): Promise<UserProfile | null> {
+  const user_id = await uid();
+  const { data, error } = await supabase
+    .from("user_profiles")
+    .select("*")
+    .eq("user_id", user_id)
+    .maybeSingle();
+  if (error) throw error;
+  return data as UserProfile | null;
+}
+
+export async function upsertMyProfile(
+  displayName: string,
+  partnerId: string | null,
+): Promise<UserProfile> {
+  const user_id = await uid();
+  const { data, error } = await supabase
+    .from("user_profiles")
+    .upsert(
+      { user_id, display_name: displayName.trim(), partner_id: partnerId || null },
+      { onConflict: "user_id" },
+    )
+    .select()
+    .single();
+  if (error) throw error;
+  return data as UserProfile;
+}
+
+export async function fetchProfileForUser(userId: string): Promise<UserProfile | null> {
+  const { data, error } = await supabase
+    .from("user_profiles")
+    .select("*")
+    .eq("user_id", userId)
+    .maybeSingle();
+  if (error) throw error;
+  return data as UserProfile | null;
+}
+
+// ---------- Cross-user comparison data (partner RLS must be enabled) ----------
+
+export async function fetchAllDailyLogsForUser(userId: string): Promise<DailyLog[]> {
+  const { data, error } = await supabase
+    .from("daily_logs")
+    .select("*")
+    .eq("user_id", userId)
+    .order("date");
+  if (error) throw error;
+  return data as DailyLog[];
+}
+
+export async function fetchWorkoutSessionsForUser(
+  userId: string,
+): Promise<WorkoutSession[]> {
+  const { data, error } = await supabase
+    .from("workout_sessions")
+    .select("*")
+    .eq("user_id", userId)
+    .order("date");
+  if (error) throw error;
+  return data as WorkoutSession[];
+}
+
+export interface ExercisePRRow {
+  exercise_id: string;
+  name: string;
+  muscle_group: string;
+  max_weight: number;
+  max_reps: number;
+}
+
+export async function fetchExercisePRsForUser(
+  userId: string,
+): Promise<ExercisePRRow[]> {
+  const { data, error } = await supabase
+    .from("exercise_sets")
+    .select("exercise_id, weight_kg, reps, exercise:exercises(name, muscle_group)")
+    .eq("user_id", userId);
+  if (error) throw error;
+
+  type Row = ExerciseSet & { exercise: Pick<Exercise, "name" | "muscle_group"> };
+  const rows = data as unknown as Row[];
+
+  const map = new Map<
+    string,
+    { name: string; muscle_group: string; max_weight: number; max_reps: number }
+  >();
+  for (const r of rows) {
+    const existing = map.get(r.exercise_id);
+    if (!existing) {
+      map.set(r.exercise_id, {
+        name: r.exercise.name,
+        muscle_group: r.exercise.muscle_group,
+        max_weight: r.weight_kg,
+        max_reps: r.reps,
+      });
+    } else {
+      if (r.weight_kg > existing.max_weight) existing.max_weight = r.weight_kg;
+      if (r.reps > existing.max_reps) existing.max_reps = r.reps;
+    }
+  }
+
+  return Array.from(map.entries())
+    .map(([exercise_id, v]) => ({ exercise_id, ...v }))
+    .sort((a, b) => a.muscle_group.localeCompare(b.muscle_group) || a.name.localeCompare(b.name));
 }

@@ -166,3 +166,75 @@ create policy "sch_exercises_owner" on public.schedule_exercises
       where ws.id = schedule_id and ws.user_id = auth.uid()
     )
   );
+
+-- ---------------------------------------------------------------
+-- User profiles + partner comparison
+-- ---------------------------------------------------------------
+
+create table if not exists public.user_profiles (
+  user_id       uuid primary key references auth.users(id) on delete cascade,
+  display_name  text not null default 'Me',
+  partner_id    uuid references auth.users(id) on delete set null
+);
+
+alter table public.user_profiles enable row level security;
+
+-- Anyone authenticated can read profiles (only display_name is stored)
+drop policy if exists "profiles_read" on public.user_profiles;
+create policy "profiles_read" on public.user_profiles
+  for select using (auth.role() = 'authenticated');
+
+-- Only owner can write their own profile
+drop policy if exists "profiles_write" on public.user_profiles;
+create policy "profiles_write" on public.user_profiles
+  for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
+
+-- ---------------------------------------------------------------
+-- Relax RLS on daily_logs, workout_sessions, exercise_sets
+-- to allow a linked partner to read each other's data
+-- ---------------------------------------------------------------
+
+-- Helper: returns true if the requesting user has linked `target_user_id` as their partner
+-- (one-directional: if YOU set THEM as partner, you can read their data)
+
+-- daily_logs: split owner-all into write-owner + select-owner-or-partner
+drop policy if exists "daily_logs_owner" on public.daily_logs;
+
+create policy "daily_logs_owner_write" on public.daily_logs
+  for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
+
+create policy "daily_logs_partner_read" on public.daily_logs
+  for select using (
+    exists (
+      select 1 from public.user_profiles up
+      where up.user_id = auth.uid() and up.partner_id = daily_logs.user_id
+    )
+  );
+
+-- workout_sessions: split owner-all + partner select
+drop policy if exists "sessions_owner" on public.workout_sessions;
+
+create policy "sessions_owner_write" on public.workout_sessions
+  for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
+
+create policy "sessions_partner_read" on public.workout_sessions
+  for select using (
+    exists (
+      select 1 from public.user_profiles up
+      where up.user_id = auth.uid() and up.partner_id = workout_sessions.user_id
+    )
+  );
+
+-- exercise_sets: split owner-all + partner select
+drop policy if exists "sets_owner" on public.exercise_sets;
+
+create policy "sets_owner_write" on public.exercise_sets
+  for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
+
+create policy "sets_partner_read" on public.exercise_sets
+  for select using (
+    exists (
+      select 1 from public.user_profiles up
+      where up.user_id = auth.uid() and up.partner_id = exercise_sets.user_id
+    )
+  );

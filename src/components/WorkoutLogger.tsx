@@ -18,7 +18,7 @@ import type {
   ExerciseSetWithExercise,
   WorkoutSchedule,
 } from "@/lib/types";
-import { computePRs, epley1RM } from "@/lib/pr";
+import { computePRs } from "@/lib/pr";
 
 interface Props {
   dateISO: string;
@@ -141,8 +141,7 @@ export default function WorkoutLogger({ dateISO }: Props) {
     const prev = computePRs(others);
     const isPR =
       justAdded.weight_kg > prev.maxWeight ||
-      justAdded.reps > prev.maxReps ||
-      epley1RM(justAdded.weight_kg, justAdded.reps) > prev.maxE1RM;
+      justAdded.reps > prev.maxReps;
     if (isPR) {
       setPrSetIds((s) => new Set(s).add(newSetId));
     }

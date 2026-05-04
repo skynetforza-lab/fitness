@@ -6,6 +6,7 @@ import CalendarPage from "./pages/CalendarPage";
 import WorkoutPage from "./pages/WorkoutPage";
 import ExercisesPage from "./pages/ExercisesPage";
 import StatsPage from "./pages/StatsPage";
+import ComparePage from "./pages/ComparePage";
 
 function AppShell({ children }: { children: React.ReactNode }) {
   return (
@@ -56,6 +57,16 @@ export default function App() {
           <AuthGate>
             <AppShell>
               <StatsPage />
+            </AppShell>
+          </AuthGate>
+        }
+      />
+      <Route
+        path="/compare"
+        element={
+          <AuthGate>
+            <AppShell>
+              <ComparePage />
             </AppShell>
           </AuthGate>
         }
