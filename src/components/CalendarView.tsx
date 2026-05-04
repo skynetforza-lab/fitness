@@ -13,7 +13,7 @@ import {
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { useMemo } from "react";
 import { SCHEDULE_START, isBeforeStart, toISODate } from "@/lib/dates";
-import { HABIT_COLORS, HABIT_KEYS, HABIT_LABELS } from "@/lib/types";
+import { HABIT_COLORS, HABIT_KEYS } from "@/lib/types";
 import type { DailyLog, HabitKey } from "@/lib/types";
 import { cn } from "@/lib/cn";
 
@@ -114,11 +114,19 @@ export default function CalendarView({
                 {format(d, "d")}
               </button>
 
-              {/* Habit tick circles */}
+              {/* Habit tick rows with labels */}
               {!disabled && (
-                <div className="mt-auto grid grid-cols-2 gap-0.5">
+                <div className="mt-1 flex flex-col gap-0.5">
                   {HABIT_KEYS.map((k) => {
                     const checked = log?.[k] ?? false;
+                    const shortLabel =
+                      k === "steps_10k"
+                        ? "10K Steps"
+                        : k === "clean_eating"
+                          ? "Clean Eating"
+                          : k === "trainer"
+                            ? "Trainer"
+                            : "Workout";
                     return (
                       <button
                         key={k}
@@ -127,19 +135,24 @@ export default function CalendarView({
                           e.stopPropagation();
                           onToggleHabit(iso, k, !checked);
                         }}
-                        title={HABIT_LABELS[k]}
-                        aria-label={`${checked ? "Unmark" : "Mark"} ${HABIT_LABELS[k]}`}
-                        className="flex items-center justify-center rounded p-0.5 transition hover:scale-110"
+                        aria-label={`${checked ? "Unmark" : "Mark"} ${shortLabel}`}
+                        className="flex items-center gap-1 rounded px-0.5 py-px transition hover:bg-slate-50"
                       >
                         <span
                           className={cn(
-                            "block h-3 w-3 rounded-full border transition",
+                            "block h-2.5 w-2.5 shrink-0 rounded-full border transition",
                             checked
                               ? "border-transparent shadow-sm"
                               : "border-slate-300 bg-white",
                           )}
                           style={checked ? { background: HABIT_COLORS[k] } : undefined}
                         />
+                        <span
+                          className="truncate text-[9px] leading-none"
+                          style={{ color: checked ? HABIT_COLORS[k] : "#94a3b8" }}
+                        >
+                          {shortLabel}
+                        </span>
                       </button>
                     );
                   })}
@@ -150,24 +163,6 @@ export default function CalendarView({
         })}
       </div>
 
-      {/* Legend */}
-      <div className="mt-3 flex flex-wrap items-center gap-3 text-xs text-slate-500">
-        {HABIT_KEYS.map((k) => (
-          <div key={k} className="flex items-center gap-1.5">
-            <span
-              className="h-2 w-2 rounded-full"
-              style={{ background: HABIT_COLORS[k] }}
-            />
-            <span className="capitalize">
-              {k === "steps_10k"
-                ? "10K steps"
-                : k === "clean_eating"
-                  ? "Clean eating"
-                  : k}
-            </span>
-          </div>
-        ))}
-      </div>
     </div>
   );
 }
