@@ -13,8 +13,8 @@ import {
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { useMemo } from "react";
 import { SCHEDULE_START, isBeforeStart, toISODate } from "@/lib/dates";
-import { HABIT_COLORS, HABIT_KEYS } from "@/lib/types";
-import type { DailyLog } from "@/lib/types";
+import { HABIT_COLORS, HABIT_KEYS, HABIT_LABELS } from "@/lib/types";
+import type { DailyLog, HabitKey } from "@/lib/types";
 import { cn } from "@/lib/cn";
 
 interface Props {
@@ -22,6 +22,7 @@ interface Props {
   setMonth: (d: Date) => void;
   logsByDate: Map<string, DailyLog>;
   onSelectDate: (d: Date) => void;
+  onToggleHabit: (iso: string, habit: HabitKey, next: boolean) => void;
   today: Date;
 }
 
@@ -30,6 +31,7 @@ export default function CalendarView({
   setMonth,
   logsByDate,
   onSelectDate,
+  onToggleHabit,
   today,
 }: Props) {
   const days = useMemo(() => {
@@ -44,6 +46,7 @@ export default function CalendarView({
 
   return (
     <div className="card p-4">
+      {/* Month nav */}
       <div className="mb-3 flex items-center justify-between">
         <button
           type="button"
@@ -65,6 +68,7 @@ export default function CalendarView({
         </button>
       </div>
 
+      {/* Weekday headers */}
       <div className="mb-1 grid grid-cols-7 text-center text-xs font-medium text-slate-500">
         {["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((d) => (
           <div key={d} className="py-1">
@@ -73,6 +77,7 @@ export default function CalendarView({
         ))}
       </div>
 
+      {/* Day grid */}
       <div className="grid grid-cols-7 gap-1">
         {days.map((d) => {
           const iso = toISODate(d);
@@ -80,49 +85,72 @@ export default function CalendarView({
           const disabled = isBeforeStart(d) || isAfter(d, today);
           const log = logsByDate.get(iso);
           const isToday = isSameDay(d, today);
+
           return (
-            <button
+            <div
               key={iso}
-              type="button"
-              disabled={disabled}
-              onClick={() => onSelectDate(d)}
               className={cn(
-                "relative flex aspect-square flex-col items-center justify-start rounded-lg border p-1 text-xs transition",
+                "relative flex min-h-[60px] flex-col rounded-lg border p-1 text-xs transition",
                 inMonth ? "bg-white" : "bg-slate-50 text-slate-400",
-                disabled
-                  ? "cursor-not-allowed opacity-40"
-                  : "hover:border-brand-400 hover:bg-brand-50",
+                disabled ? "opacity-40" : "",
                 isToday && "border-brand-500 ring-2 ring-brand-200",
                 !isToday && "border-slate-200",
               )}
             >
-              <span
+              {/* Date number — click opens detail dialog */}
+              <button
+                type="button"
+                disabled={disabled}
+                onClick={() => onSelectDate(d)}
                 className={cn(
-                  "self-end text-[11px]",
+                  "self-end rounded px-0.5 text-[11px] leading-none transition",
+                  disabled
+                    ? "cursor-not-allowed"
+                    : "hover:bg-brand-50 hover:text-brand-700",
                   isToday && "font-semibold text-brand-700",
                 )}
+                aria-label={`Open ${format(d, "MMMM d")}`}
               >
                 {format(d, "d")}
-              </span>
-              {log && (
-                <div className="mt-auto flex flex-wrap justify-center gap-0.5">
-                  {HABIT_KEYS.map((k) =>
-                    log[k] ? (
-                      <span
+              </button>
+
+              {/* Habit tick circles */}
+              {!disabled && (
+                <div className="mt-auto grid grid-cols-2 gap-0.5">
+                  {HABIT_KEYS.map((k) => {
+                    const checked = log?.[k] ?? false;
+                    return (
+                      <button
                         key={k}
-                        className="h-1.5 w-1.5 rounded-full"
-                        style={{ background: HABIT_COLORS[k] }}
-                        title={k}
-                      />
-                    ) : null,
-                  )}
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onToggleHabit(iso, k, !checked);
+                        }}
+                        title={HABIT_LABELS[k]}
+                        aria-label={`${checked ? "Unmark" : "Mark"} ${HABIT_LABELS[k]}`}
+                        className="flex items-center justify-center rounded p-0.5 transition hover:scale-110"
+                      >
+                        <span
+                          className={cn(
+                            "block h-3 w-3 rounded-full border transition",
+                            checked
+                              ? "border-transparent shadow-sm"
+                              : "border-slate-300 bg-white",
+                          )}
+                          style={checked ? { background: HABIT_COLORS[k] } : undefined}
+                        />
+                      </button>
+                    );
+                  })}
                 </div>
               )}
-            </button>
+            </div>
           );
         })}
       </div>
 
+      {/* Legend */}
       <div className="mt-3 flex flex-wrap items-center gap-3 text-xs text-slate-500">
         {HABIT_KEYS.map((k) => (
           <div key={k} className="flex items-center gap-1.5">

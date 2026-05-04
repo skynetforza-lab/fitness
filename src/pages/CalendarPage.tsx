@@ -56,7 +56,7 @@ export default function CalendarPage() {
       <div className="card p-4">
         <h1 className="text-xl font-semibold">Your fitness calendar</h1>
         <p className="text-sm text-slate-600">
-          Schedule starts <strong>4 May 2026</strong>. Tap a day to mark your
+          Schedule starts <strong>5 May 2026</strong>. Tap a day to mark your
           habits and log a workout.
         </p>
       </div>
@@ -65,6 +65,20 @@ export default function CalendarPage() {
         setMonth={setMonth}
         logsByDate={logsByDate}
         onSelectDate={setSelectedDate}
+        onToggleHabit={async (iso, habit, next) => {
+          const existing = logsByDate.get(iso);
+          const updated = await upsertDailyLog(iso, {
+            workout: existing?.workout ?? false,
+            trainer: existing?.trainer ?? false,
+            steps_10k: existing?.steps_10k ?? false,
+            clean_eating: existing?.clean_eating ?? false,
+            [habit]: next,
+          });
+          setLogs((prev) => {
+            const without = prev.filter((l) => l.date !== iso);
+            return [...without, updated];
+          });
+        }}
         today={today}
       />
       <DayDetailDialog

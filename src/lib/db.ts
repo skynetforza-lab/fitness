@@ -6,6 +6,8 @@ import type {
   ExerciseSetWithExercise,
   HabitKey,
   WorkoutSession,
+  WorkoutSchedule,
+  ScheduleExercise,
 } from "./types";
 
 async function uid(): Promise<string> {
@@ -173,4 +175,94 @@ export async function addSet(input: {
 export async function deleteSet(id: string): Promise<void> {
   const { error } = await supabase.from("exercise_sets").delete().eq("id", id);
   if (error) throw error;
+}
+
+// ---------- Workout schedules ----------
+
+export async function fetchSchedules(): Promise<WorkoutSchedule[]> {
+  const { data, error } = await supabase
+    .from("workout_schedules")
+    .select("*")
+    .order("created_at");
+  if (error) throw error;
+  return data as WorkoutSchedule[];
+}
+
+export async function createSchedule(name: string): Promise<WorkoutSchedule> {
+  const user_id = await uid();
+  const { data, error } = await supabase
+    .from("workout_schedules")
+    .insert({ name: name.trim(), user_id })
+    .select()
+    .single();
+  if (error) throw error;
+  return data as WorkoutSchedule;
+}
+
+export async function deleteSchedule(id: string): Promise<void> {
+  const { error } = await supabase
+    .from("workout_schedules")
+    .delete()
+    .eq("id", id);
+  if (error) throw error;
+}
+
+export async function fetchScheduleExercises(
+  scheduleId: string,
+): Promise<ScheduleExercise[]> {
+  const { data, error } = await supabase
+    .from("schedule_exercises")
+    .select("*, exercise:exercises(id, name, muscle_group)")
+    .eq("schedule_id", scheduleId)
+    .order("position");
+  if (error) throw error;
+  return data as unknown as ScheduleExercise[];
+}
+
+export async function addScheduleExercise(
+  scheduleId: string,
+  exerciseId: string,
+  setCount: number,
+  defaultReps: number,
+  position: number,
+): Promise<ScheduleExercise> {
+  const { data, error } = await supabase
+    .from("schedule_exercises")
+    .insert({
+      schedule_id: scheduleId,
+      exercise_id: exerciseId,
+      set_count: setCount,
+      default_reps: defaultReps,
+      position,
+    })
+    .select()
+    .single();
+  if (error) throw error;
+  return data as ScheduleExercise;
+}
+
+export async function removeScheduleExercise(id: string): Promise<void> {
+  const { error } = await supabase
+    .from("schedule_exercises")
+    .delete()
+    .eq("id", id);
+  if (error) throw error;
+}
+
+/**
+ * Returns the sets from the most recent session this exercise was performed in,
+ * sorted by set_number ascending. Used to prefill schedule loads.
+ */
+export async function fetchLastWorkoutSets(
+  exerciseId: string,
+): Promise<{ set_number: number; weight_kg: number; reps: number }[]> {
+  const all = await fetchSetsForExercise(exerciseId);
+  if (all.length === 0) return [];
+  // Find most recent date
+  const sorted = [...all].sort((a, b) => b.date.localeCompare(a.date));
+  const latestDate = sorted[0].date;
+  return sorted
+    .filter((s) => s.date === latestDate)
+    .sort((a, b) => a.set_number - b.set_number)
+    .map(({ set_number, weight_kg, reps }) => ({ set_number, weight_kg, reps }));
 }

@@ -63,3 +63,21 @@ export const HABIT_KEYS: HabitKey[] = [
   "steps_10k",
   "clean_eating",
 ];
+
+// ---------- Workout schedules ----------
+export interface WorkoutSchedule {
+  id: string;
+  user_id: string;
+  name: string;
+  created_at: string;
+}
+
+export interface ScheduleExercise {
+  id: string;
+  schedule_id: string;
+  exercise_id: string;
+  position: number;
+  set_count: number;
+  default_reps: number;
+  exercise?: Pick<Exercise, "id" | "name" | "muscle_group">;
+}

@@ -126,3 +126,43 @@ insert into public.exercises (name, muscle_group, is_preset, user_id) values
   ('Hanging Leg Raise',    'Core',      true, null),
   ('Cable Crunch',         'Core',      true, null)
 on conflict (name) where is_preset = true do nothing;
+
+-- ---------------------------------------------------------------
+-- Workout schedules (named day templates)
+-- ---------------------------------------------------------------
+
+create table if not exists public.workout_schedules (
+  id          uuid primary key default gen_random_uuid(),
+  user_id     uuid not null references auth.users(id) on delete cascade,
+  name        text not null,
+  created_at  timestamptz not null default now()
+);
+
+-- Exercises that belong to a schedule (ordered by position)
+create table if not exists public.schedule_exercises (
+  id           uuid primary key default gen_random_uuid(),
+  schedule_id  uuid not null references public.workout_schedules(id) on delete cascade,
+  exercise_id  uuid not null references public.exercises(id) on delete cascade,
+  position     int not null default 0,
+  set_count    int not null default 3,
+  default_reps int not null default 10
+);
+
+create index if not exists sch_exercises_schedule_idx on public.schedule_exercises (schedule_id);
+
+-- RLS
+alter table public.workout_schedules  enable row level security;
+alter table public.schedule_exercises enable row level security;
+
+drop policy if exists "schedules_owner" on public.workout_schedules;
+create policy "schedules_owner" on public.workout_schedules
+  for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
+
+drop policy if exists "sch_exercises_owner" on public.schedule_exercises;
+create policy "sch_exercises_owner" on public.schedule_exercises
+  for all using (
+    exists (
+      select 1 from public.workout_schedules ws
+      where ws.id = schedule_id and ws.user_id = auth.uid()
+    )
+  );

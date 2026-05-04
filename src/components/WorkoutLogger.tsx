@@ -1,21 +1,86 @@
 import { useEffect, useMemo, useState } from "react";
-import { Plus } from "lucide-react";
+import { CalendarDays, Loader2, Plus, X } from "lucide-react";
 import ExerciseCombobox from "./ExerciseCombobox";
 import SetRow from "./SetRow";
 import {
   addSet,
   deleteSet,
   fetchExercises,
+  fetchSchedules,
+  fetchScheduleExercises,
+  fetchLastWorkoutSets,
   fetchSetsForDate,
   fetchSetsForExercise,
   getOrCreateSession,
 } from "@/lib/db";
-import type { Exercise, ExerciseSetWithExercise } from "@/lib/types";
+import type {
+  Exercise,
+  ExerciseSetWithExercise,
+  WorkoutSchedule,
+} from "@/lib/types";
 import { computePRs, epley1RM } from "@/lib/pr";
 
 interface Props {
   dateISO: string;
 }
+
+// ─── Schedule picker modal ───────────────────────────────────────────────────
+
+function SchedulePickerModal({
+  onPick,
+  onClose,
+}: {
+  onPick: (s: WorkoutSchedule) => void;
+  onClose: () => void;
+}) {
+  const [schedules, setSchedules] = useState<WorkoutSchedule[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    fetchSchedules()
+      .then(setSchedules)
+      .finally(() => setLoading(false));
+  }, []);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-4 sm:items-center">
+      <div className="w-full max-w-sm rounded-2xl bg-white p-5 shadow-xl">
+        <div className="mb-4 flex items-center justify-between">
+          <h3 className="font-semibold">Load a schedule</h3>
+          <button type="button" onClick={onClose} className="btn-ghost p-1">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        {loading ? (
+          <div className="flex justify-center py-6">
+            <Loader2 className="h-5 w-5 animate-spin text-slate-400" />
+          </div>
+        ) : schedules.length === 0 ? (
+          <p className="py-4 text-center text-sm text-slate-500">
+            No schedules yet. Create one in the Exercises → Schedules tab.
+          </p>
+        ) : (
+          <ul className="divide-y divide-slate-100">
+            {schedules.map((s) => (
+              <li key={s.id}>
+                <button
+                  type="button"
+                  onClick={() => onPick(s)}
+                  className="w-full rounded-lg px-3 py-3 text-left text-sm font-medium hover:bg-brand-50 hover:text-brand-700 transition"
+                >
+                  {s.name}
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─── Main logger ─────────────────────────────────────────────────────────────
 
 export default function WorkoutLogger({ dateISO }: Props) {
   const [exercises, setExercises] = useState<Exercise[]>([]);
@@ -25,6 +90,8 @@ export default function WorkoutLogger({ dateISO }: Props) {
   const [weight, setWeight] = useState("");
   const [reps, setReps] = useState("");
   const [busy, setBusy] = useState(false);
+  const [loadingSchedule, setLoadingSchedule] = useState(false);
+  const [showPicker, setShowPicker] = useState(false);
   const [prSetIds, setPrSetIds] = useState<Set<string>>(new Set());
   const [error, setError] = useState<string | null>(null);
 
@@ -67,12 +134,10 @@ export default function WorkoutLogger({ dateISO }: Props) {
   }, [sets, selectedId]);
 
   async function checkPR(exerciseId: string, newSetId: string) {
-    // Fetch ALL sets ever for this exercise. If the new set is the all-time
-    // best by weight, reps, OR e1rm, mark it as a PR.
-    const all = await fetchSetsForExercise(exerciseId);
-    const justAdded = all.find((s) => s.id === newSetId);
+    const allSets = await fetchSetsForExercise(exerciseId);
+    const justAdded = allSets.find((s) => s.id === newSetId);
     if (!justAdded) return;
-    const others = all.filter((s) => s.id !== newSetId);
+    const others = allSets.filter((s) => s.id !== newSetId);
     const prev = computePRs(others);
     const isPR =
       justAdded.weight_kg > prev.maxWeight ||
@@ -132,10 +197,74 @@ export default function WorkoutLogger({ dateISO }: Props) {
     });
   }
 
+  async function handleLoadSchedule(schedule: WorkoutSchedule) {
+    if (!sessionId) return;
+    setShowPicker(false);
+    setLoadingSchedule(true);
+    setError(null);
+    try {
+      const scheduleExercises = await fetchScheduleExercises(schedule.id);
+
+      for (const item of scheduleExercises) {
+        const lastSets = await fetchLastWorkoutSets(item.exercise_id);
+        const ex = exercises.find((e) => e.id === item.exercise_id);
+
+        for (let i = 0; i < item.set_count; i++) {
+          const prev = lastSets[i];
+          const w = prev?.weight_kg ?? 0;
+          const r = prev?.reps ?? item.default_reps;
+          const created = await addSet({
+            sessionId,
+            exerciseId: item.exercise_id,
+            setNumber: i + 1,
+            weightKg: w,
+            reps: r,
+          });
+          if (ex) {
+            setSets((prev) => [
+              ...prev,
+              {
+                ...created,
+                exercise: { id: ex.id, name: ex.name, muscle_group: ex.muscle_group },
+              } as ExerciseSetWithExercise,
+            ]);
+          }
+        }
+      }
+    } catch (e) {
+      setError(`Failed to load schedule: ${(e as Error).message}`);
+    } finally {
+      setLoadingSchedule(false);
+    }
+  }
+
   return (
     <div className="space-y-4">
+      {showPicker && (
+        <SchedulePickerModal
+          onPick={handleLoadSchedule}
+          onClose={() => setShowPicker(false)}
+        />
+      )}
+
       <div className="card p-4">
-        <h3 className="mb-3 text-sm font-semibold text-slate-700">Log a set</h3>
+        <div className="mb-3 flex items-center justify-between">
+          <h3 className="text-sm font-semibold text-slate-700">Log a set</h3>
+          <button
+            type="button"
+            onClick={() => setShowPicker(true)}
+            disabled={loadingSchedule}
+            className="btn-ghost flex items-center gap-1.5 text-xs"
+          >
+            {loadingSchedule ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <CalendarDays className="h-3.5 w-3.5" />
+            )}
+            {loadingSchedule ? "Loading…" : "Load schedule"}
+          </button>
+        </div>
+
         <div className="space-y-3">
           <ExerciseCombobox
             exercises={exercises}
@@ -184,8 +313,8 @@ export default function WorkoutLogger({ dateISO }: Props) {
 
       {grouped.length === 0 ? (
         <div className="card p-6 text-center text-sm text-slate-500">
-          No sets logged yet for this day. Pick an exercise above and add your
-          first set.
+          No sets logged yet for this day. Pick an exercise above, or load a
+          schedule to auto-fill your usual weights.
         </div>
       ) : (
         grouped.map(([exerciseId, list]) => {
