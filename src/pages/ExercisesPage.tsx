@@ -333,22 +333,29 @@ function SchedulesTab() {
   const [exercises, setExercises] = useState<Exercise[]>([]);
   const [newName, setNewName] = useState("");
   const [busy, setBusy] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [createError, setCreateError] = useState<string | null>(null);
 
   useEffect(() => {
-    Promise.all([fetchSchedules(), fetchExercises()]).then(([s, e]) => {
-      setSchedules(s);
-      setExercises(e);
-    });
+    Promise.all([fetchSchedules(), fetchExercises()])
+      .then(([s, e]) => {
+        setSchedules(s);
+        setExercises(e);
+      })
+      .catch((e) => setLoadError((e as Error).message));
   }, []);
 
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault();
     if (!newName.trim()) return;
     setBusy(true);
+    setCreateError(null);
     try {
       const created = await createSchedule(newName);
       setSchedules((prev) => [...prev, created]);
       setNewName("");
+    } catch (e) {
+      setCreateError((e as Error).message);
     } finally {
       setBusy(false);
     }
@@ -365,8 +372,17 @@ function SchedulesTab() {
         </p>
       </div>
 
+      {loadError && (
+        <div className="card border-rose-200 bg-rose-50 p-4 text-sm text-rose-700">
+          <strong>Database error:</strong> {loadError}
+          <p className="mt-1 text-xs">
+            Make sure you've run the required SQL in your Supabase SQL editor.
+          </p>
+        </div>
+      )}
+
       {/* New schedule */}
-      <form onSubmit={handleCreate} className="card flex items-end gap-2 p-4">
+      <form onSubmit={handleCreate} className="card flex flex-wrap items-end gap-2 p-4">
         <div className="flex-1">
           <label className="label">Schedule name</label>
           <input
@@ -379,6 +395,7 @@ function SchedulesTab() {
         <button type="submit" disabled={busy || !newName.trim()} className="btn-primary">
           <Plus className="h-4 w-4" /> Create
         </button>
+        {createError && <p className="w-full text-sm text-rose-600">{createError}</p>}
       </form>
 
       {schedules.length === 0 ? (
