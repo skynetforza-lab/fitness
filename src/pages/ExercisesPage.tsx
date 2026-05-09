@@ -214,12 +214,12 @@ function ScheduleCard({
   }
 
   return (
-    <div className="card overflow-hidden">
+    <div className="card">
       {/* Header */}
       <button
         type="button"
         onClick={toggle}
-        className="flex w-full items-center justify-between p-4 text-left hover:bg-slate-50"
+        className="flex w-full items-center justify-between rounded-t-2xl p-4 text-left hover:bg-slate-50"
       >
         <span className="font-semibold">{schedule.name}</span>
         <div className="flex items-center gap-2">
