@@ -14,6 +14,7 @@ import {
 import { MUSCLE_GROUPS, type MuscleGroup } from "@/lib/presets";
 import type { Exercise, WorkoutSchedule, ScheduleExercise } from "@/lib/types";
 import ExerciseCombobox from "@/components/ExerciseCombobox";
+import { supabase } from "@/lib/supabase";
 import { cn } from "@/lib/cn";
 
 type Tab = "library" | "schedules";
@@ -26,9 +27,11 @@ function LibraryTab() {
   const [group, setGroup] = useState<MuscleGroup>("Chest");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
 
   useEffect(() => {
     fetchExercises().then(setExercises);
+    supabase.auth.getUser().then(({ data }) => setCurrentUserId(data.user?.id ?? null));
   }, []);
 
   const grouped = useMemo(() => {
@@ -114,28 +117,37 @@ function LibraryTab() {
             {g}
           </h3>
           <ul className="divide-y divide-slate-100">
-            {list.map((ex) => (
-              <li key={ex.id} className="flex items-center justify-between py-2">
-                <span>
-                  {ex.name}
-                  {!ex.is_preset && (
-                    <span className="ml-2 rounded bg-brand-50 px-1.5 py-0.5 text-[10px] font-medium text-brand-700">
-                      custom
-                    </span>
+            {list.map((ex) => {
+              const isOwnCustom = !ex.is_preset && ex.user_id === currentUserId;
+              const isSharedCustom = !ex.is_preset && ex.user_id !== currentUserId;
+              return (
+                <li key={ex.id} className="flex items-center justify-between py-2">
+                  <span>
+                    {ex.name}
+                    {isOwnCustom && (
+                      <span className="ml-2 rounded bg-brand-50 px-1.5 py-0.5 text-[10px] font-medium text-brand-700">
+                        custom
+                      </span>
+                    )}
+                    {isSharedCustom && (
+                      <span className="ml-2 rounded bg-purple-50 px-1.5 py-0.5 text-[10px] font-medium text-purple-700">
+                        shared
+                      </span>
+                    )}
+                  </span>
+                  {isOwnCustom && (
+                    <button
+                      type="button"
+                      onClick={() => handleDelete(ex)}
+                      className="rounded p-1 text-slate-400 hover:bg-rose-50 hover:text-rose-600"
+                      aria-label="Delete"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
                   )}
-                </span>
-                {!ex.is_preset && (
-                  <button
-                    type="button"
-                    onClick={() => handleDelete(ex)}
-                    className="rounded p-1 text-slate-400 hover:bg-rose-50 hover:text-rose-600"
-                    aria-label="Delete"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </button>
-                )}
-              </li>
-            ))}
+                </li>
+              );
+            })}
           </ul>
         </div>
       ))}

@@ -71,10 +71,17 @@ drop policy if exists "daily_logs_owner" on public.daily_logs;
 create policy "daily_logs_owner" on public.daily_logs
   for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
 
--- exercises: presets visible to everyone, custom visible only to owner
+-- exercises: presets visible to everyone; custom visible to owner AND linked partner
 drop policy if exists "exercises_select" on public.exercises;
 create policy "exercises_select" on public.exercises
-  for select using (is_preset = true or auth.uid() = user_id);
+  for select using (
+    is_preset = true
+    or auth.uid() = user_id
+    or exists (
+      select 1 from public.user_profiles up
+      where up.user_id = auth.uid() and up.partner_id = exercises.user_id
+    )
+  );
 
 drop policy if exists "exercises_insert" on public.exercises;
 create policy "exercises_insert" on public.exercises
