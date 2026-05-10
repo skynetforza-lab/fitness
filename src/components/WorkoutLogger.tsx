@@ -12,6 +12,7 @@ import {
   fetchSetsForDate,
   fetchSetsForExercise,
   getOrCreateSession,
+  updateSet,
 } from "@/lib/db";
 import type {
   Exercise,
@@ -196,6 +197,23 @@ export default function WorkoutLogger({ dateISO }: Props) {
     });
   }
 
+  async function handleUpdate(
+    id: string,
+    patch: { weightKg?: number; reps?: number },
+  ) {
+    const updated = await updateSet(id, patch);
+    setSets((prev) =>
+      prev.map((s) =>
+        s.id === id
+          ? { ...s, weight_kg: updated.weight_kg, reps: updated.reps }
+          : s,
+      ),
+    );
+    // Re-check PR after edit
+    const exerciseId = sets.find((s) => s.id === id)?.exercise_id;
+    if (exerciseId) void checkPR(exerciseId, id);
+  }
+
   async function handleLoadSchedule(schedule: WorkoutSchedule) {
     if (!sessionId) return;
     setShowPicker(false);
@@ -333,6 +351,7 @@ export default function WorkoutLogger({ dateISO }: Props) {
                       set={s}
                       isPR={prSetIds.has(s.id)}
                       onDelete={() => handleDelete(s.id)}
+                      onUpdate={(patch) => handleUpdate(s.id, patch)}
                     />
                   ))}
               </div>

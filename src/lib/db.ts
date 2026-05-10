@@ -178,6 +178,23 @@ export async function deleteSet(id: string): Promise<void> {
   if (error) throw error;
 }
 
+export async function updateSet(
+  id: string,
+  patch: { weightKg?: number; reps?: number },
+): Promise<ExerciseSet> {
+  const update: Record<string, number> = {};
+  if (patch.weightKg !== undefined) update.weight_kg = patch.weightKg;
+  if (patch.reps !== undefined) update.reps = patch.reps;
+  const { data, error } = await supabase
+    .from("exercise_sets")
+    .update(update)
+    .eq("id", id)
+    .select()
+    .single();
+  if (error) throw error;
+  return data as ExerciseSet;
+}
+
 // ---------- Workout schedules ----------
 
 export async function fetchSchedules(): Promise<WorkoutSchedule[]> {

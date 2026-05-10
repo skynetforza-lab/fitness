@@ -5,6 +5,8 @@ import {
   startOfWeek,
   endOfWeek,
 } from "date-fns";
+import { Dumbbell } from "lucide-react";
+import { Link } from "react-router-dom";
 import CalendarView from "@/components/CalendarView";
 import DayDetailDialog from "@/components/DayDetailDialog";
 import { fetchDailyLogs, upsertDailyLog } from "@/lib/db";
@@ -51,14 +53,29 @@ export default function CalendarPage() {
     });
   }
 
+  const todayISO = toISODate(today);
+  const canLogToday = today >= SCHEDULE_START;
+
   return (
     <div className="mx-auto max-w-5xl space-y-4 px-4 py-4">
-      <div className="card p-4">
-        <h1 className="text-xl font-semibold">Your fitness calendar</h1>
-        <p className="text-sm text-slate-600">
-          Schedule starts <strong>5 May 2026</strong>. Tap a day to mark your
-          habits and log a workout.
-        </p>
+      <div className="card flex items-start justify-between gap-3 p-4">
+        <div>
+          <h1 className="text-xl font-semibold">Your fitness calendar</h1>
+          <p className="text-sm text-slate-600">
+            Schedule starts <strong>5 May 2026</strong>. Tap a day to mark your
+            habits and log a workout.
+          </p>
+        </div>
+        {canLogToday && (
+          <Link
+            to={`/workout/${todayISO}`}
+            className="btn-primary shrink-0 whitespace-nowrap"
+          >
+            <Dumbbell className="h-4 w-4" />
+            <span className="hidden sm:inline">Log today's workout</span>
+            <span className="sm:hidden">Log today</span>
+          </Link>
+        )}
       </div>
       <CalendarView
         month={month}
