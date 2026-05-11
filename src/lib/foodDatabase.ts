@@ -1,4 +1,364 @@
-import type { FoodSearchResult } from "./types";
+import type { FoodSearchResult, FoodServing } from "./types";
+
+/**
+ * Common serving sizes for each food. The user can pick a chip
+ * (e.g. "2 eggs") and we convert to grams internally.
+ */
+const SERVINGS: Record<string, FoodServing[]> = {
+  // Eggs
+  "Boiled Egg": [
+    { label: "1 egg", grams: 50 },
+    { label: "2 eggs", grams: 100 },
+    { label: "3 eggs", grams: 150 },
+  ],
+  "Scrambled Egg": [
+    { label: "1 egg", grams: 50 },
+    { label: "2 eggs", grams: 100 },
+    { label: "3 eggs", grams: 150 },
+  ],
+  "Fried Egg": [
+    { label: "1 egg", grams: 50 },
+    { label: "2 eggs", grams: 100 },
+  ],
+  "Omelette (plain)": [
+    { label: "2-egg omelette", grams: 100 },
+    { label: "3-egg omelette", grams: 150 },
+  ],
+  "Omelette (vegetable)": [
+    { label: "2-egg omelette", grams: 110 },
+    { label: "3-egg omelette", grams: 165 },
+  ],
+  "Egg White (cooked)": [
+    { label: "1 egg white", grams: 33 },
+    { label: "2 egg whites", grams: 66 },
+    { label: "3 egg whites", grams: 99 },
+  ],
+
+  // Indian Breads
+  "Roti / Chapati": [
+    { label: "1 roti", grams: 40 },
+    { label: "2 rotis", grams: 80 },
+    { label: "3 rotis", grams: 120 },
+  ],
+  "Naan": [
+    { label: "1/2 naan", grams: 45 },
+    { label: "1 naan", grams: 90 },
+  ],
+  "Paratha (plain)": [
+    { label: "1 paratha", grams: 80 },
+    { label: "2 parathas", grams: 160 },
+  ],
+  "Aloo Paratha": [{ label: "1 paratha", grams: 110 }],
+  "Paneer Paratha": [{ label: "1 paratha", grams: 120 }],
+  "Puri": [
+    { label: "1 puri", grams: 20 },
+    { label: "3 puris", grams: 60 },
+    { label: "5 puris", grams: 100 },
+  ],
+  "Bhatura": [{ label: "1 bhatura", grams: 100 }],
+
+  // Rice & Biryani
+  "White Rice (cooked)": [
+    { label: "1 small bowl", grams: 100 },
+    { label: "1 cup", grams: 150 },
+    { label: "1 large bowl", grams: 200 },
+  ],
+  "Basmati Rice (cooked)": [
+    { label: "1 small bowl", grams: 100 },
+    { label: "1 cup", grams: 150 },
+  ],
+  "Brown Rice (cooked)": [
+    { label: "1 small bowl", grams: 100 },
+    { label: "1 cup", grams: 150 },
+  ],
+  "Jeera Rice": [
+    { label: "1 small bowl", grams: 100 },
+    { label: "1 cup", grams: 150 },
+  ],
+  "Vegetable Biryani": [
+    { label: "1 bowl", grams: 200 },
+    { label: "1 plate", grams: 300 },
+  ],
+  "Chicken Biryani": [
+    { label: "1 bowl", grams: 200 },
+    { label: "1 plate", grams: 300 },
+  ],
+  "Mutton Biryani": [
+    { label: "1 bowl", grams: 200 },
+    { label: "1 plate", grams: 300 },
+  ],
+
+  // Dal & Legumes
+  "Dal Tadka": [
+    { label: "1 small bowl", grams: 150 },
+    { label: "1 large bowl", grams: 250 },
+  ],
+  "Moong Dal (cooked)": [
+    { label: "1 small bowl", grams: 150 },
+    { label: "1 large bowl", grams: 250 },
+  ],
+  "Masoor Dal": [
+    { label: "1 small bowl", grams: 150 },
+    { label: "1 large bowl", grams: 250 },
+  ],
+  "Chana / Chole": [
+    { label: "1 small bowl", grams: 150 },
+    { label: "1 large bowl", grams: 250 },
+  ],
+  "Rajma (kidney beans)": [
+    { label: "1 small bowl", grams: 150 },
+    { label: "1 large bowl", grams: 250 },
+  ],
+  "Black Dal (urad)": [
+    { label: "1 small bowl", grams: 150 },
+    { label: "1 large bowl", grams: 250 },
+  ],
+
+  // Paneer & Indian Veg
+  Paneer: [
+    { label: "50g cube", grams: 50 },
+    { label: "100g serving", grams: 100 },
+  ],
+  "Palak Paneer": [
+    { label: "1 bowl", grams: 200 },
+    { label: "1 plate", grams: 250 },
+  ],
+  "Paneer Tikka": [
+    { label: "4 pieces", grams: 120 },
+    { label: "8 pieces", grams: 240 },
+  ],
+  "Aloo Gobi": [{ label: "1 bowl", grams: 200 }],
+  "Bhindi Masala": [{ label: "1 bowl", grams: 200 }],
+  "Mixed Vegetable Curry": [{ label: "1 bowl", grams: 200 }],
+  "Baingan Bharta": [{ label: "1 bowl", grams: 200 }],
+  "Kadai Paneer": [
+    { label: "1 bowl", grams: 200 },
+    { label: "1 plate", grams: 250 },
+  ],
+  "Malai Kofta": [{ label: "1 plate (4 koftas)", grams: 250 }],
+
+  // Indian Non-Veg
+  "Chicken Curry": [
+    { label: "1 bowl", grams: 200 },
+    { label: "1 plate", grams: 250 },
+  ],
+  "Butter Chicken": [
+    { label: "1 bowl", grams: 200 },
+    { label: "1 plate", grams: 250 },
+  ],
+  "Tandoori Chicken": [
+    { label: "1 leg piece", grams: 150 },
+    { label: "1/2 chicken", grams: 400 },
+  ],
+  "Chicken Tikka": [
+    { label: "6 pieces", grams: 150 },
+    { label: "8 pieces", grams: 200 },
+  ],
+  "Mutton Curry": [
+    { label: "1 bowl", grams: 200 },
+    { label: "1 plate", grams: 250 },
+  ],
+  "Fish Curry": [
+    { label: "1 piece + gravy", grams: 180 },
+    { label: "1 bowl", grams: 200 },
+  ],
+  "Keema (minced meat)": [{ label: "1 bowl", grams: 200 }],
+
+  // South Indian
+  Idli: [
+    { label: "1 idli", grams: 50 },
+    { label: "2 idlis", grams: 100 },
+    { label: "3 idlis", grams: 150 },
+    { label: "4 idlis", grams: 200 },
+  ],
+  "Dosa (plain)": [
+    { label: "1 dosa", grams: 80 },
+    { label: "2 dosas", grams: 160 },
+  ],
+  "Masala Dosa": [{ label: "1 masala dosa", grams: 180 }],
+  Upma: [
+    { label: "1 small bowl", grams: 150 },
+    { label: "1 large bowl", grams: 250 },
+  ],
+  Poha: [
+    { label: "1 small bowl", grams: 150 },
+    { label: "1 large bowl", grams: 250 },
+  ],
+  "Medu Vada": [
+    { label: "1 vada", grams: 40 },
+    { label: "2 vadas", grams: 80 },
+  ],
+  Sambar: [
+    { label: "1 small bowl", grams: 150 },
+    { label: "1 cup", grams: 200 },
+  ],
+  Rasam: [{ label: "1 cup", grams: 200 }],
+  Uttapam: [{ label: "1 uttapam", grams: 130 }],
+
+  // Dairy & Beverages
+  "Curd / Plain Yogurt": [
+    { label: "1 small bowl", grams: 150 },
+    { label: "1 cup", grams: 240 },
+  ],
+  "Greek Yogurt": [
+    { label: "1 small cup (170g)", grams: 170 },
+    { label: "1 cup", grams: 240 },
+  ],
+  "Whole Milk": [
+    { label: "1 cup (240ml)", grams: 240 },
+    { label: "1 glass (300ml)", grams: 300 },
+  ],
+  "Skim Milk": [
+    { label: "1 cup (240ml)", grams: 240 },
+    { label: "1 glass (300ml)", grams: 300 },
+  ],
+  "Toned Milk (Amul)": [
+    { label: "1 cup (240ml)", grams: 240 },
+    { label: "1 glass (300ml)", grams: 300 },
+  ],
+  Ghee: [
+    { label: "1 tsp", grams: 5 },
+    { label: "1 tbsp", grams: 15 },
+  ],
+  Butter: [
+    { label: "1 tsp", grams: 5 },
+    { label: "1 tbsp", grams: 15 },
+  ],
+  "Cheese (cheddar)": [
+    { label: "1 slice", grams: 28 },
+    { label: "1 cube", grams: 20 },
+  ],
+  "Cottage Cheese": [{ label: "1 small bowl", grams: 100 }],
+
+  // Proteins
+  "Chicken Breast (grilled)": [
+    { label: "Small (100g)", grams: 100 },
+    { label: "Medium (170g)", grams: 170 },
+    { label: "Large (250g)", grams: 250 },
+  ],
+  "Chicken Thigh (cooked)": [{ label: "1 thigh", grams: 120 }],
+  "Salmon (cooked)": [{ label: "1 fillet", grams: 170 }],
+  "Tuna (canned, water)": [{ label: "1 small can", grams: 140 }],
+  Tofu: [{ label: "1 block", grams: 100 }],
+  "Whey Protein (powder)": [
+    { label: "1 scoop", grams: 30 },
+    { label: "2 scoops", grams: 60 },
+  ],
+
+  // Breakfast & Grains
+  "Oats (rolled, dry)": [
+    { label: "1/2 cup (40g)", grams: 40 },
+    { label: "1 cup (80g)", grams: 80 },
+  ],
+  "Oats (cooked)": [{ label: "1 bowl", grams: 240 }],
+  Muesli: [
+    { label: "1/2 cup (40g)", grams: 40 },
+    { label: "1 cup (80g)", grams: 80 },
+  ],
+  Cornflakes: [{ label: "1 cup (30g)", grams: 30 }],
+  "Whole Wheat Bread": [
+    { label: "1 slice", grams: 30 },
+    { label: "2 slices", grams: 60 },
+  ],
+  "White Bread": [
+    { label: "1 slice", grams: 30 },
+    { label: "2 slices", grams: 60 },
+  ],
+  "Pasta (cooked)": [
+    { label: "1 small bowl", grams: 150 },
+    { label: "1 large bowl", grams: 250 },
+  ],
+
+  // Fruits
+  Banana: [
+    { label: "1 small", grams: 100 },
+    { label: "1 medium", grams: 120 },
+    { label: "1 large", grams: 150 },
+  ],
+  Apple: [
+    { label: "1 medium", grams: 180 },
+    { label: "1 large", grams: 220 },
+  ],
+  Mango: [{ label: "1 medium", grams: 200 }],
+  Orange: [{ label: "1 medium", grams: 130 }],
+  Pomegranate: [{ label: "1 medium", grams: 200 }],
+  Grapes: [{ label: "1 cup", grams: 150 }],
+  Watermelon: [
+    { label: "1 cup diced", grams: 150 },
+    { label: "1 slice (large)", grams: 280 },
+  ],
+  Papaya: [{ label: "1 cup diced", grams: 140 }],
+  Pineapple: [{ label: "1 cup diced", grams: 165 }],
+  Guava: [{ label: "1 medium", grams: 165 }],
+  Strawberries: [{ label: "1 cup", grams: 150 }],
+  Avocado: [
+    { label: "1/2 avocado", grams: 100 },
+    { label: "1 whole", grams: 200 },
+  ],
+
+  // Veg (commonly eaten whole)
+  "Potato (boiled)": [{ label: "1 medium", grams: 150 }],
+  "Sweet Potato (boiled)": [{ label: "1 medium", grams: 130 }],
+  Tomato: [{ label: "1 medium", grams: 120 }],
+  Onion: [{ label: "1 medium", grams: 110 }],
+
+  // Nuts
+  Almonds: [
+    { label: "10 almonds", grams: 12 },
+    { label: "1 handful (28g)", grams: 28 },
+  ],
+  Cashews: [
+    { label: "10 cashews", grams: 15 },
+    { label: "1 handful (28g)", grams: 28 },
+  ],
+  Peanuts: [{ label: "1 handful (28g)", grams: 28 }],
+  Walnuts: [{ label: "10 halves (28g)", grams: 28 }],
+  "Peanut Butter": [
+    { label: "1 tbsp", grams: 16 },
+    { label: "2 tbsp", grams: 32 },
+  ],
+  "Chia Seeds": [
+    { label: "1 tbsp", grams: 12 },
+    { label: "2 tbsp", grams: 24 },
+  ],
+
+  // Beverages
+  "Black Coffee": [{ label: "1 cup (240ml)", grams: 240 }],
+  "Chai (with milk & sugar)": [{ label: "1 cup (200ml)", grams: 200 }],
+  "Green Tea": [{ label: "1 cup (240ml)", grams: 240 }],
+  "Coconut Water": [
+    { label: "1 cup (240ml)", grams: 240 },
+    { label: "1 glass (300ml)", grams: 300 },
+  ],
+  "Lassi (sweet)": [{ label: "1 glass (250ml)", grams: 250 }],
+  "Buttermilk / Chaas": [{ label: "1 glass (250ml)", grams: 250 }],
+
+  // Snacks
+  Samosa: [
+    { label: "1 samosa", grams: 60 },
+    { label: "2 samosas", grams: 120 },
+  ],
+  Pakora: [
+    { label: "4 pieces", grams: 80 },
+    { label: "1 plate", grams: 150 },
+  ],
+  Dhokla: [
+    { label: "1 piece", grams: 40 },
+    { label: "3 pieces", grams: 120 },
+  ],
+  "Bhel Puri": [
+    { label: "1 small bowl", grams: 100 },
+    { label: "1 large bowl", grams: 200 },
+  ],
+  "Dark Chocolate": [
+    { label: "1 square", grams: 10 },
+    { label: "1 small bar", grams: 40 },
+  ],
+  "Milk Chocolate": [
+    { label: "1 square", grams: 10 },
+    { label: "1 small bar", grams: 40 },
+  ],
+};
 
 /**
  * Curated food database — instant search for common foods.
@@ -176,5 +536,8 @@ export function searchLocalFoods(query: string): FoodSearchResult[] {
     .filter((x): x is { food: FoodSearchResult; score: number } => x !== null);
 
   scored.sort((a, b) => b.score - a.score);
-  return scored.slice(0, 30).map((s) => s.food);
+  return scored.slice(0, 30).map((s) => ({
+    ...s.food,
+    servings: SERVINGS[s.food.product_name],
+  }));
 }

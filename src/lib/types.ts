@@ -91,12 +91,18 @@ export interface FoodLog {
   created_at: string;
 }
 
+export interface FoodServing {
+  label: string;
+  grams: number;
+}
+
 export interface FoodSearchResult {
   product_name: string;
   calories_per_100g: number;
   protein_per_100g: number;
   carbs_per_100g: number;
   fat_per_100g: number;
+  servings?: FoodServing[];
 }
 
 export interface NutritionGoals {

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Search, X, Loader2, Plus } from "lucide-react";
-import type { FoodLog, FoodSearchResult } from "@/lib/types";
+import type { FoodLog, FoodSearchResult, FoodServing } from "@/lib/types";
 import { searchLocalFoods, searchRemoteFoods } from "@/lib/nutrition";
 import { addFoodLog } from "@/lib/db";
 
@@ -23,6 +23,7 @@ export default function FoodSearchModal({ mealType, date, onAdded, onClose }: Pr
   const [remoteLoading, setRemoteLoading] = useState(false);
   const [selected, setSelected] = useState<FoodSearchResult | null>(null);
   const [qty, setQty] = useState(100);
+  const [activeServing, setActiveServing] = useState<FoodServing | null>(null);
   const [adding, setAdding] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -86,10 +87,16 @@ export default function FoodSearchModal({ mealType, date, onAdded, onClose }: Pr
     if (!selected || !computed) return;
     setAdding(true);
     try {
+      // If user picked a serving chip, embed the label in the food name
+      // for nicer display in the log row (e.g. "Boiled Egg (2 eggs)").
+      const displayName = activeServing
+        ? `${selected.product_name} (${activeServing.label})`
+        : selected.product_name;
+
       await addFoodLog({
         date,
         meal_type: mealType,
-        food_name: selected.product_name,
+        food_name: displayName,
         quantity: qty,
         unit: "g",
         calories: Math.round(computed.calories * 10) / 10,
@@ -169,7 +176,17 @@ export default function FoodSearchModal({ mealType, date, onAdded, onClose }: Pr
               <button
                 key={`${item.source}-${i}`}
                 type="button"
-                onClick={() => { setSelected(item.food); setQty(100); }}
+                onClick={() => {
+                  setSelected(item.food);
+                  // Default to first serving size if available, else 100g
+                  if (item.food.servings && item.food.servings.length > 0) {
+                    setActiveServing(item.food.servings[0]);
+                    setQty(item.food.servings[0].grams);
+                  } else {
+                    setActiveServing(null);
+                    setQty(100);
+                  }
+                }}
                 className="flex w-full items-center justify-between gap-2 px-3 py-2.5 text-left hover:bg-slate-50"
               >
                 <div className="flex min-w-0 items-center gap-2">
@@ -199,22 +216,59 @@ export default function FoodSearchModal({ mealType, date, onAdded, onClose }: Pr
               </p>
               <button
                 type="button"
-                onClick={() => setSelected(null)}
+                onClick={() => {
+                  setSelected(null);
+                  setActiveServing(null);
+                }}
                 className="shrink-0 text-xs text-brand-600 hover:underline"
               >
                 Change
               </button>
             </div>
 
-            {/* Quantity input */}
+            {/* Serving size chips */}
+            {selected.servings && selected.servings.length > 0 && (
+              <div className="flex flex-wrap gap-1.5">
+                {selected.servings.map((s) => {
+                  const isActive =
+                    activeServing?.label === s.label && qty === s.grams;
+                  return (
+                    <button
+                      key={s.label}
+                      type="button"
+                      onClick={() => {
+                        setActiveServing(s);
+                        setQty(s.grams);
+                      }}
+                      className={
+                        isActive
+                          ? "rounded-full bg-brand-600 px-2.5 py-1 text-xs font-medium text-white"
+                          : "rounded-full border border-slate-200 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-100"
+                      }
+                    >
+                      {s.label}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* Quantity input (custom grams) */}
             <div className="flex items-center gap-2">
-              <label className="text-sm text-slate-600 shrink-0">Quantity (g)</label>
+              <label className="text-sm text-slate-600 shrink-0">
+                {selected.servings && selected.servings.length > 0
+                  ? "Or custom (g)"
+                  : "Quantity (g)"}
+              </label>
               <input
                 type="number"
                 min={1}
                 max={9999}
                 value={qty}
-                onChange={(e) => setQty(Math.max(1, Number(e.target.value)))}
+                onChange={(e) => {
+                  setQty(Math.max(1, Number(e.target.value)));
+                  setActiveServing(null); // typing custom amount clears chip
+                }}
                 className="input w-24 text-right"
               />
             </div>
