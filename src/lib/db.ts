@@ -4,6 +4,7 @@ import type {
   Exercise,
   ExerciseSet,
   ExerciseSetWithExercise,
+  FoodLog,
   HabitKey,
   WorkoutSession,
   WorkoutSchedule,
@@ -313,6 +314,57 @@ export async function upsertMyProfile(
     .single();
   if (error) throw error;
   return data as UserProfile;
+}
+
+export async function upsertNutritionGoals(goals: {
+  calories_goal: number;
+  protein_goal: number;
+  carbs_goal: number;
+  fat_goal: number;
+}): Promise<void> {
+  const user_id = await uid();
+  const { error } = await supabase
+    .from("user_profiles")
+    .upsert({ user_id, ...goals }, { onConflict: "user_id" });
+  if (error) throw error;
+}
+
+// ---------- Food logs ----------
+
+export async function fetchFoodLogs(dateISO: string): Promise<FoodLog[]> {
+  const { data, error } = await supabase
+    .from("food_logs")
+    .select("*")
+    .eq("date", dateISO)
+    .order("created_at");
+  if (error) throw error;
+  return data as FoodLog[];
+}
+
+export async function addFoodLog(entry: {
+  date: string;
+  meal_type: FoodLog["meal_type"];
+  food_name: string;
+  quantity: number;
+  unit: string;
+  calories: number;
+  protein_g: number;
+  carbs_g: number;
+  fat_g: number;
+}): Promise<FoodLog> {
+  const user_id = await uid();
+  const { data, error } = await supabase
+    .from("food_logs")
+    .insert({ user_id, ...entry })
+    .select()
+    .single();
+  if (error) throw error;
+  return data as FoodLog;
+}
+
+export async function deleteFoodLog(id: string): Promise<void> {
+  const { error } = await supabase.from("food_logs").delete().eq("id", id);
+  if (error) throw error;
 }
 
 export async function fetchProfileForUser(userId: string): Promise<UserProfile | null> {

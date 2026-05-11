@@ -5,7 +5,7 @@ import {
   startOfWeek,
   endOfWeek,
 } from "date-fns";
-import { Dumbbell } from "lucide-react";
+import { Dumbbell, Utensils } from "lucide-react";
 import { Link } from "react-router-dom";
 import CalendarView from "@/components/CalendarView";
 import DayDetailDialog from "@/components/DayDetailDialog";
@@ -67,14 +67,24 @@ export default function CalendarPage() {
           </p>
         </div>
         {canLogToday && (
-          <Link
-            to={`/workout/${todayISO}`}
-            className="btn-primary shrink-0 whitespace-nowrap"
-          >
-            <Dumbbell className="h-4 w-4" />
-            <span className="hidden sm:inline">Log today's workout</span>
-            <span className="sm:hidden">Log today</span>
-          </Link>
+          <div className="flex shrink-0 gap-2">
+            <Link
+              to={`/workout/${todayISO}`}
+              className="btn-primary whitespace-nowrap"
+            >
+              <Dumbbell className="h-4 w-4" />
+              <span className="hidden sm:inline">Log workout</span>
+              <span className="sm:hidden">Workout</span>
+            </Link>
+            <Link
+              to={`/nutrition/${todayISO}`}
+              className="btn-secondary whitespace-nowrap"
+            >
+              <Utensils className="h-4 w-4" />
+              <span className="hidden sm:inline">Log food</span>
+              <span className="sm:hidden">Food</span>
+            </Link>
+          </div>
         )}
       </div>
       <CalendarView

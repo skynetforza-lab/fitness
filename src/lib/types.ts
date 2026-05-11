@@ -69,7 +69,49 @@ export interface UserProfile {
   user_id: string;
   display_name: string;
   partner_id: string | null;
+  calories_goal?: number | null;
+  protein_goal?: number | null;
+  carbs_goal?: number | null;
+  fat_goal?: number | null;
 }
+
+// ---------- Nutrition / food logs ----------
+export interface FoodLog {
+  id: string;
+  user_id: string;
+  date: string; // YYYY-MM-DD
+  meal_type: "breakfast" | "lunch" | "dinner" | "snack";
+  food_name: string;
+  quantity: number;
+  unit: string;
+  calories: number;
+  protein_g: number;
+  carbs_g: number;
+  fat_g: number;
+  created_at: string;
+}
+
+export interface FoodSearchResult {
+  product_name: string;
+  calories_per_100g: number;
+  protein_per_100g: number;
+  carbs_per_100g: number;
+  fat_per_100g: number;
+}
+
+export interface NutritionGoals {
+  calories: number;
+  protein: number;
+  carbs: number;
+  fat: number;
+}
+
+export const DEFAULT_GOALS: NutritionGoals = {
+  calories: 2000,
+  protein: 150,
+  carbs: 250,
+  fat: 65,
+};
 
 // ---------- Workout schedules ----------
 export interface WorkoutSchedule {

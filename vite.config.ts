@@ -9,4 +9,21 @@ export default defineConfig({
       "@": path.resolve(__dirname, "./src"),
     },
   },
+  server: {
+    proxy: {
+      "/api/food-search": {
+        target: "https://world.openfoodfacts.org",
+        changeOrigin: true,
+        rewrite: (p) => {
+          const qs = p.includes("?") ? p.split("?")[1] : "";
+          const params = new URLSearchParams(qs);
+          const q = params.get("query") ?? "";
+          return (
+            `/cgi/search.pl?search_terms=${encodeURIComponent(q)}` +
+            `&json=1&fields=product_name,nutriments&page_size=20`
+          );
+        },
+      },
+    },
+  },
 });

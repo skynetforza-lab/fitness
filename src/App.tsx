@@ -6,6 +6,7 @@ import LoginPage from "./pages/LoginPage";
 import CalendarPage from "./pages/CalendarPage";
 import WorkoutPage from "./pages/WorkoutPage";
 import ExercisesPage from "./pages/ExercisesPage";
+import NutritionPage from "./pages/NutritionPage";
 import StatsPage from "./pages/StatsPage";
 import ComparePage from "./pages/ComparePage";
 import SetPasswordPage from "./pages/SetPasswordPage";
@@ -71,6 +72,16 @@ export default function App() {
           <AuthGate>
             <AppShell>
               <ExercisesPage />
+            </AppShell>
+          </AuthGate>
+        }
+      />
+      <Route
+        path="/nutrition/:date"
+        element={
+          <AuthGate>
+            <AppShell>
+              <NutritionPage />
             </AppShell>
           </AuthGate>
         }

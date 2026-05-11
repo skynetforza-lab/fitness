@@ -245,3 +245,38 @@ create policy "sets_partner_read" on public.exercise_sets
       where up.user_id = auth.uid() and up.partner_id = exercise_sets.user_id
     )
   );
+
+-- ---------------------------------------------------------------
+-- Nutrition tracking: daily calorie & macro goals on user_profiles
+-- ---------------------------------------------------------------
+alter table public.user_profiles
+  add column if not exists calories_goal int,
+  add column if not exists protein_goal  int,
+  add column if not exists carbs_goal    int,
+  add column if not exists fat_goal      int;
+
+-- ---------------------------------------------------------------
+-- Food logs (nutrition diary)
+-- ---------------------------------------------------------------
+create table if not exists public.food_logs (
+  id          uuid primary key default gen_random_uuid(),
+  user_id     uuid not null references auth.users(id) on delete cascade,
+  date        date not null,
+  meal_type   text not null check (meal_type in ('breakfast','lunch','dinner','snack')),
+  food_name   text not null,
+  quantity    numeric(8,2) not null default 100,
+  unit        text not null default 'g',
+  calories    numeric(8,1) not null,
+  protein_g   numeric(8,2) not null default 0,
+  carbs_g     numeric(8,2) not null default 0,
+  fat_g       numeric(8,2) not null default 0,
+  created_at  timestamptz not null default now()
+);
+
+create index if not exists food_logs_user_date on public.food_logs (user_id, date);
+
+alter table public.food_logs enable row level security;
+
+drop policy if exists "food_logs_owner" on public.food_logs;
+create policy "food_logs_owner" on public.food_logs
+  for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
