@@ -24,6 +24,16 @@ export default defineConfig({
           );
         },
       },
+      "/api/food-barcode": {
+        target: "https://world.openfoodfacts.org",
+        changeOrigin: true,
+        rewrite: (p) => {
+          const qs = p.includes("?") ? p.split("?")[1] : "";
+          const params = new URLSearchParams(qs);
+          const code = params.get("barcode") ?? "";
+          return `/api/v0/product/${encodeURIComponent(code)}.json`;
+        },
+      },
     },
   },
 });

@@ -1,11 +1,13 @@
 import { supabase } from "./supabase";
 import type {
+  CustomFood,
   DailyLog,
   Exercise,
   ExerciseSet,
   ExerciseSetWithExercise,
   FoodLog,
   HabitKey,
+  RecipeIngredient,
   WorkoutSession,
   WorkoutSchedule,
   ScheduleExercise,
@@ -364,6 +366,52 @@ export async function addFoodLog(entry: {
 
 export async function deleteFoodLog(id: string): Promise<void> {
   const { error } = await supabase.from("food_logs").delete().eq("id", id);
+  if (error) throw error;
+}
+
+// ---------- Custom foods & recipes ----------
+
+export async function fetchCustomFoods(): Promise<CustomFood[]> {
+  const { data, error } = await supabase
+    .from("custom_foods")
+    .select("*")
+    .order("name");
+  if (error) throw error;
+  return (data ?? []) as CustomFood[];
+}
+
+export async function addCustomFood(input: {
+  name: string;
+  calories_per_100g: number;
+  protein_per_100g: number;
+  carbs_per_100g: number;
+  fat_per_100g: number;
+  ingredients?: RecipeIngredient[];
+  total_grams?: number;
+  is_recipe?: boolean;
+}): Promise<CustomFood> {
+  const user_id = await uid();
+  const { data, error } = await supabase
+    .from("custom_foods")
+    .insert({
+      user_id,
+      name: input.name.trim(),
+      calories_per_100g: input.calories_per_100g,
+      protein_per_100g: input.protein_per_100g,
+      carbs_per_100g: input.carbs_per_100g,
+      fat_per_100g: input.fat_per_100g,
+      ingredients: input.ingredients ?? null,
+      total_grams: input.total_grams ?? null,
+      is_recipe: input.is_recipe ?? false,
+    })
+    .select()
+    .single();
+  if (error) throw error;
+  return data as CustomFood;
+}
+
+export async function deleteCustomFood(id: string): Promise<void> {
+  const { error } = await supabase.from("custom_foods").delete().eq("id", id);
   if (error) throw error;
 }
 

@@ -31,13 +31,13 @@ export default function MealSection({
   return (
     <div className="card overflow-hidden">
       {/* Section header */}
-      <div className="flex items-center justify-between px-4 py-3">
+      <div className="flex items-center justify-between gap-2 px-3 py-2">
         <button
           type="button"
-          className="flex items-center gap-2 text-left"
+          className="flex flex-1 items-center gap-2 rounded-lg p-2 text-left hover:bg-slate-50 active:bg-slate-100"
           onClick={() => setOpen((o) => !o)}
         >
-          <span className="text-lg leading-none">{emoji}</span>
+          <span className="text-xl leading-none">{emoji}</span>
           <span className="font-semibold text-slate-800">{label}</span>
           {mealCalories > 0 && (
             <span className="text-sm text-slate-500 tabular-nums">
@@ -53,9 +53,9 @@ export default function MealSection({
         <button
           type="button"
           onClick={() => setShowSearch(true)}
-          className="flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-medium text-brand-600 hover:bg-brand-50"
+          className="flex shrink-0 items-center gap-1 rounded-lg bg-brand-50 px-3 py-2 text-sm font-medium text-brand-700 hover:bg-brand-100 active:bg-brand-200"
         >
-          <Plus className="h-3.5 w-3.5" />
+          <Plus className="h-4 w-4" />
           Add food
         </button>
       </div>

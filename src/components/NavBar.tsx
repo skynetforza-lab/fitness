@@ -28,7 +28,7 @@ export default function NavBar() {
           <Dumbbell className="h-5 w-5 text-brand-600" />
           <span>Fitness Tracker</span>
         </div>
-        <nav className="flex items-center gap-1">
+        <nav className="flex items-center gap-0.5">
           {links.map(({ to, label, icon: Icon, end }) => (
             <NavLink
               key={to}
@@ -36,24 +36,25 @@ export default function NavBar() {
               end={end}
               className={({ isActive }) =>
                 cn(
-                  "flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition",
+                  "flex h-10 items-center gap-1.5 rounded-md px-2.5 text-sm font-medium transition sm:px-3",
                   isActive
                     ? "bg-brand-50 text-brand-700"
-                    : "text-slate-600 hover:bg-slate-100",
+                    : "text-slate-600 hover:bg-slate-100 active:bg-slate-200",
                 )
               }
+              aria-label={label}
             >
-              <Icon className="h-4 w-4" />
+              <Icon className="h-5 w-5 sm:h-4 sm:w-4" />
               <span className="hidden sm:inline">{label}</span>
             </NavLink>
           ))}
           <button
             type="button"
             onClick={logout}
-            className="flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-100"
-            title="Sign out"
+            className="flex h-10 items-center gap-1.5 rounded-md px-2.5 text-sm font-medium text-slate-600 hover:bg-slate-100 active:bg-slate-200 sm:px-3"
+            aria-label="Sign out"
           >
-            <LogOut className="h-4 w-4" />
+            <LogOut className="h-5 w-5 sm:h-4 sm:w-4" />
             <span className="hidden sm:inline">Sign out</span>
           </button>
         </nav>

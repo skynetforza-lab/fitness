@@ -60,11 +60,12 @@ export default function NutritionGoalsModal({ current, onClose, onSaved }: Props
               <div className="flex flex-1 items-center gap-1.5">
                 <input
                   type="number"
+                  inputMode="numeric"
                   min={1}
                   max={99999}
                   value={value}
                   onChange={(e) => set(Math.max(1, Number(e.target.value)))}
-                  className="input text-right"
+                  className="input text-right text-base"
                 />
                 <span className="shrink-0 text-sm text-slate-500">{unit}</span>
               </div>

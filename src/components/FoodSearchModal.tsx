@@ -1,8 +1,30 @@
-import { useEffect, useRef, useState } from "react";
-import { Search, X, Loader2, Plus } from "lucide-react";
-import type { FoodLog, FoodSearchResult, FoodServing } from "@/lib/types";
-import { searchLocalFoods, searchRemoteFoods } from "@/lib/nutrition";
-import { addFoodLog } from "@/lib/db";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
+import {
+  Search,
+  X,
+  Loader2,
+  Plus,
+  ScanLine,
+  ChefHat,
+  Trash2,
+} from "lucide-react";
+import type {
+  CustomFood,
+  FoodLog,
+  FoodSearchResult,
+  FoodServing,
+} from "@/lib/types";
+import {
+  lookupBarcode,
+  searchLocalFoods,
+  searchRemoteFoods,
+} from "@/lib/nutrition";
+import { addFoodLog, deleteCustomFood, fetchCustomFoods } from "@/lib/db";
+import CustomFoodModal from "./CustomFoodModal";
+
+// Lazy-load the barcode scanner — keeps the html5-qrcode bundle (~300KB)
+// out of the main chunk until the user actually taps "Scan barcode".
+const BarcodeScanner = lazy(() => import("./BarcodeScanner"));
 
 interface Props {
   mealType: FoodLog["meal_type"];
@@ -11,68 +33,100 @@ interface Props {
   onClose: () => void;
 }
 
+type Source = "common" | "mine" | "branded";
+
 interface ResultItem {
   food: FoodSearchResult;
-  source: "common" | "branded";
+  source: Source;
+  customId?: string; // present when source = "mine"
 }
 
-export default function FoodSearchModal({ mealType, date, onAdded, onClose }: Props) {
+const MEAL_LABELS: Record<FoodLog["meal_type"], string> = {
+  breakfast: "Breakfast",
+  lunch: "Lunch",
+  dinner: "Dinner",
+  snack: "Snacks",
+};
+
+export default function FoodSearchModal({
+  mealType,
+  date,
+  onAdded,
+  onClose,
+}: Props) {
   const [query, setQuery] = useState("");
-  const [localResults, setLocalResults] = useState<ResultItem[]>([]);
-  const [remoteResults, setRemoteResults] = useState<ResultItem[]>([]);
+  const [customFoods, setCustomFoods] = useState<CustomFood[]>([]);
+  const [results, setResults] = useState<ResultItem[]>([]);
   const [remoteLoading, setRemoteLoading] = useState(false);
   const [selected, setSelected] = useState<FoodSearchResult | null>(null);
+  const [selectedSource, setSelectedSource] = useState<Source>("common");
   const [qty, setQty] = useState(100);
   const [activeServing, setActiveServing] = useState<FoodServing | null>(null);
   const [adding, setAdding] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const [showScanner, setShowScanner] = useState(false);
+  const [showCustom, setShowCustom] = useState(false);
+  const [barcodeStatus, setBarcodeStatus] = useState<string | null>(null);
+
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  // Load custom foods on mount
+  useEffect(() => {
+    fetchCustomFoods().then(setCustomFoods).catch(() => setCustomFoods([]));
+  }, []);
 
   useEffect(() => {
     inputRef.current?.focus();
   }, []);
 
+  // Search effect: combines local DB + custom foods + (debounced) remote
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
 
     const q = query.trim();
     if (!q) {
-      setLocalResults([]);
-      setRemoteResults([]);
+      setResults([]);
       setRemoteLoading(false);
       return;
     }
+    const qLower = q.toLowerCase();
 
-    // Instant local search
-    const local = searchLocalFoods(q).map(
-      (food): ResultItem => ({ food, source: "common" }),
-    );
-    setLocalResults(local);
-    setRemoteResults([]);
+    // 1. Custom foods (user's own) — instant
+    const mine: ResultItem[] = customFoods
+      .filter((cf) => cf.name.toLowerCase().includes(qLower))
+      .map((cf) => ({
+        food: customFoodToResult(cf),
+        source: "mine",
+        customId: cf.id,
+      }));
 
-    // Debounced remote search
+    // 2. Curated local DB — instant
+    const local: ResultItem[] = searchLocalFoods(q).map((food) => ({
+      food,
+      source: "common",
+    }));
+
+    setResults([...mine, ...local]);
     setRemoteLoading(true);
+
     debounceRef.current = setTimeout(async () => {
       const remote = await searchRemoteFoods(q);
-      // Filter out remote items whose name already appears in local
-      const localNames = new Set(local.map((r) => r.food.product_name.toLowerCase()));
-      const filtered = remote
-        .filter((r) => !localNames.has(r.product_name.toLowerCase()))
-        .map((food): ResultItem => ({ food, source: "branded" }));
-      setRemoteResults(filtered);
+      const seen = new Set(
+        [...mine, ...local].map((r) => r.food.product_name.toLowerCase()),
+      );
+      const branded: ResultItem[] = remote
+        .filter((r) => !seen.has(r.product_name.toLowerCase()))
+        .map((food) => ({ food, source: "branded" }));
+      setResults([...mine, ...local, ...branded]);
       setRemoteLoading(false);
     }, 400);
 
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
     };
-  }, [query]);
-
-  const allResults = [...localResults, ...remoteResults];
-  const showNoResults =
-    query.trim() !== "" && !remoteLoading && allResults.length === 0;
+  }, [query, customFoods]);
 
   const computed = selected
     ? {
@@ -83,12 +137,39 @@ export default function FoodSearchModal({ mealType, date, onAdded, onClose }: Pr
       }
     : null;
 
+  function selectFood(item: ResultItem) {
+    setSelected(item.food);
+    setSelectedSource(item.source);
+    if (item.food.servings && item.food.servings.length > 0) {
+      setActiveServing(item.food.servings[0]);
+      setQty(item.food.servings[0].grams);
+    } else {
+      setActiveServing(null);
+      setQty(100);
+    }
+  }
+
+  async function handleBarcodeDetected(code: string) {
+    setShowScanner(false);
+    setBarcodeStatus("Looking up barcode…");
+    setError(null);
+    const product = await lookupBarcode(code);
+    if (!product) {
+      setBarcodeStatus(null);
+      setError(`No product found for barcode ${code}. Try creating it manually.`);
+      return;
+    }
+    setBarcodeStatus(null);
+    setSelected(product);
+    setSelectedSource("branded");
+    setQty(100);
+    setActiveServing(null);
+  }
+
   async function handleAdd() {
     if (!selected || !computed) return;
     setAdding(true);
     try {
-      // If user picked a serving chip, embed the label in the food name
-      // for nicer display in the log row (e.g. "Boiled Egg (2 eggs)").
       const displayName = activeServing
         ? `${selected.product_name} (${activeServing.label})`
         : selected.product_name;
@@ -112,208 +193,331 @@ export default function FoodSearchModal({ mealType, date, onAdded, onClose }: Pr
     }
   }
 
-  const mealLabels: Record<FoodLog["meal_type"], string> = {
-    breakfast: "Breakfast",
-    lunch: "Lunch",
-    dinner: "Dinner",
-    snack: "Snacks",
-  };
+  async function handleDeleteCustom(id: string) {
+    if (!confirm("Delete this custom food? This can't be undone.")) return;
+    await deleteCustomFood(id);
+    setCustomFoods((prev) => prev.filter((cf) => cf.id !== id));
+  }
+
+  const showNoResults =
+    query.trim() !== "" && !remoteLoading && results.length === 0;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 sm:items-center">
-      <div className="w-full max-w-lg rounded-t-2xl bg-white p-4 shadow-xl sm:rounded-2xl">
-        {/* Header */}
-        <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-base font-semibold text-slate-900">
-            Add to {mealLabels[mealType]}
-          </h2>
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100"
-          >
-            <X className="h-4 w-4" />
-          </button>
-        </div>
+    <>
+      <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 sm:items-center">
+        <div className="flex h-[92vh] w-full max-w-lg flex-col rounded-t-2xl bg-white shadow-xl sm:h-auto sm:max-h-[85vh] sm:rounded-2xl">
+          {/* Header */}
+          <div className="flex shrink-0 items-center justify-between border-b border-slate-200 px-4 py-3">
+            <h2 className="text-base font-semibold text-slate-900">
+              Add to {MEAL_LABELS[mealType]}
+            </h2>
+            <button
+              type="button"
+              onClick={onClose}
+              className="flex h-9 w-9 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100"
+            >
+              <X className="h-5 w-5" />
+            </button>
+          </div>
 
-        {/* Search */}
-        <div className="relative mb-3">
-          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-          <input
-            ref={inputRef}
-            type="text"
-            placeholder="Search food (e.g. boiled egg, paneer, biryani…)"
-            value={query}
-            onChange={(e) => {
-              setQuery(e.target.value);
-              setSelected(null);
-            }}
-            className="input pl-9"
-          />
-          {remoteLoading && (
-            <Loader2 className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 animate-spin text-slate-400" />
-          )}
-        </div>
-
-        {/* No-results state */}
-        {!selected && showNoResults && (
-          <p className="mb-2 text-sm text-slate-500">
-            No results found — try a simpler name or check the spelling
-          </p>
-        )}
-
-        {/* Hint when no query */}
-        {!selected && !query.trim() && (
-          <p className="mb-2 text-xs text-slate-400">
-            Try “egg”, “paneer”, “rice”, “chicken”, “oats”…
-          </p>
-        )}
-
-        {/* Results list */}
-        {!selected && allResults.length > 0 && (
-          <div className="mb-3 max-h-72 overflow-y-auto divide-y divide-slate-100 rounded-lg border border-slate-200">
-            {allResults.map((item, i) => (
-              <button
-                key={`${item.source}-${i}`}
-                type="button"
-                onClick={() => {
-                  setSelected(item.food);
-                  // Default to first serving size if available, else 100g
-                  if (item.food.servings && item.food.servings.length > 0) {
-                    setActiveServing(item.food.servings[0]);
-                    setQty(item.food.servings[0].grams);
-                  } else {
-                    setActiveServing(null);
-                    setQty(100);
-                  }
-                }}
-                className="flex w-full items-center justify-between gap-2 px-3 py-2.5 text-left hover:bg-slate-50"
-              >
-                <div className="flex min-w-0 items-center gap-2">
-                  <span className="text-sm font-medium text-slate-800 line-clamp-1">
-                    {item.food.product_name}
-                  </span>
-                  {item.source === "common" && (
-                    <span className="shrink-0 rounded-full bg-brand-50 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-brand-700">
-                      Common
-                    </span>
+          {/* Body */}
+          <div className="flex-1 overflow-y-auto px-4 py-3">
+            {!selected ? (
+              <>
+                {/* Search input */}
+                <div className="relative mb-3">
+                  <Search className="pointer-events-none absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" />
+                  <input
+                    ref={inputRef}
+                    type="text"
+                    placeholder="Search food…"
+                    value={query}
+                    onChange={(e) => setQuery(e.target.value)}
+                    className="input pl-10 pr-10 text-base"
+                    autoCorrect="off"
+                    autoCapitalize="off"
+                  />
+                  {remoteLoading && (
+                    <Loader2 className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 animate-spin text-slate-400" />
                   )}
                 </div>
-                <span className="ml-3 shrink-0 text-xs text-slate-500">
-                  {Math.round(item.food.calories_per_100g)} kcal/100g
-                </span>
-              </button>
-            ))}
-          </div>
-        )}
 
-        {/* Selected food + quantity */}
-        {selected && computed && (
-          <div className="mb-3 space-y-3 rounded-lg bg-slate-50 p-3">
-            <div className="flex items-start justify-between gap-2">
-              <p className="text-sm font-medium text-slate-900 leading-snug">
-                {selected.product_name}
-              </p>
+                {/* Action buttons row */}
+                <div className="mb-3 flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowScanner(true)}
+                    className="flex flex-1 items-center justify-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50 active:bg-slate-100"
+                  >
+                    <ScanLine className="h-4 w-4 text-brand-600" />
+                    Scan barcode
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowCustom(true)}
+                    className="flex flex-1 items-center justify-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50 active:bg-slate-100"
+                  >
+                    <ChefHat className="h-4 w-4 text-brand-600" />
+                    New food
+                  </button>
+                </div>
+
+                {/* Barcode status */}
+                {barcodeStatus && (
+                  <p className="mb-2 flex items-center gap-2 text-sm text-slate-600">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    {barcodeStatus}
+                  </p>
+                )}
+
+                {/* Error */}
+                {error && (
+                  <p className="mb-2 text-sm text-red-600">{error}</p>
+                )}
+
+                {/* No-results */}
+                {showNoResults && (
+                  <div className="rounded-lg border border-dashed border-slate-300 p-4 text-center">
+                    <p className="text-sm text-slate-500">
+                      No results for “{query.trim()}”
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => setShowCustom(true)}
+                      className="mt-2 text-sm font-medium text-brand-600 hover:underline"
+                    >
+                      Create it as a custom food
+                    </button>
+                  </div>
+                )}
+
+                {/* Hint */}
+                {!query.trim() && (
+                  <p className="text-xs text-slate-400">
+                    Try “egg”, “paneer”, “rice”, “chicken”, “oats”…
+                  </p>
+                )}
+
+                {/* Results */}
+                {results.length > 0 && (
+                  <div className="divide-y divide-slate-100 rounded-lg border border-slate-200">
+                    {results.map((item, i) => (
+                      <div
+                        key={`${item.source}-${i}`}
+                        className="flex items-center gap-2 hover:bg-slate-50"
+                      >
+                        <button
+                          type="button"
+                          onClick={() => selectFood(item)}
+                          className="flex min-w-0 flex-1 items-center justify-between gap-2 px-3 py-3 text-left"
+                        >
+                          <div className="flex min-w-0 items-center gap-2">
+                            <span className="line-clamp-1 text-sm font-medium text-slate-800">
+                              {item.food.product_name}
+                            </span>
+                            <SourceBadge source={item.source} />
+                          </div>
+                          <span className="ml-2 shrink-0 text-xs text-slate-500">
+                            {Math.round(item.food.calories_per_100g)} kcal/100g
+                          </span>
+                        </button>
+                        {item.customId && (
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteCustom(item.customId!)}
+                            className="mr-2 shrink-0 rounded p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-500"
+                            aria-label="Delete custom food"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </>
+            ) : (
+              /* Selected food + quantity */
+              computed && (
+                <div className="space-y-3">
+                  <div className="rounded-lg bg-slate-50 p-3">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="break-words text-base font-medium text-slate-900">
+                          {selected.product_name}
+                        </p>
+                        <SourceBadge source={selectedSource} />
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSelected(null);
+                          setActiveServing(null);
+                          setError(null);
+                        }}
+                        className="shrink-0 text-sm font-medium text-brand-600 hover:underline"
+                      >
+                        Change
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Serving chips */}
+                  {selected.servings && selected.servings.length > 0 && (
+                    <div className="flex flex-wrap gap-2">
+                      {selected.servings.map((s) => {
+                        const isActive =
+                          activeServing?.label === s.label && qty === s.grams;
+                        return (
+                          <button
+                            key={s.label}
+                            type="button"
+                            onClick={() => {
+                              setActiveServing(s);
+                              setQty(s.grams);
+                            }}
+                            className={
+                              isActive
+                                ? "rounded-full bg-brand-600 px-3 py-1.5 text-sm font-medium text-white"
+                                : "rounded-full border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-100 active:bg-slate-200"
+                            }
+                          >
+                            {s.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {/* Quantity input */}
+                  <div className="flex items-center gap-2">
+                    <label className="text-sm text-slate-600">
+                      {selected.servings && selected.servings.length > 0
+                        ? "Or custom (g)"
+                        : "Quantity (g)"}
+                    </label>
+                    <input
+                      type="number"
+                      inputMode="decimal"
+                      min={1}
+                      max={9999}
+                      value={qty}
+                      onChange={(e) => {
+                        setQty(Math.max(1, Number(e.target.value)));
+                        setActiveServing(null);
+                      }}
+                      className="input w-24 text-right text-base"
+                    />
+                  </div>
+
+                  {/* Live preview */}
+                  <div className="grid grid-cols-4 gap-2 text-center text-xs">
+                    {[
+                      { label: "Calories", val: computed.calories, unit: "kcal", cls: "text-slate-800 font-semibold" },
+                      { label: "Protein", val: computed.protein, unit: "g", cls: "text-emerald-700" },
+                      { label: "Carbs", val: computed.carbs, unit: "g", cls: "text-amber-700" },
+                      { label: "Fat", val: computed.fat, unit: "g", cls: "text-violet-700" },
+                    ].map(({ label, val, unit, cls }) => (
+                      <div key={label} className="rounded bg-white p-2 shadow-sm">
+                        <div className={`font-medium tabular-nums ${cls}`}>
+                          {Math.round(val)}{unit}
+                        </div>
+                        <div className="mt-0.5 text-slate-400">{label}</div>
+                      </div>
+                    ))}
+                  </div>
+
+                  {error && (
+                    <p className="text-sm text-red-600">{error}</p>
+                  )}
+                </div>
+              )
+            )}
+          </div>
+
+          {/* Footer: Add button */}
+          {selected && (
+            <div className="shrink-0 border-t border-slate-200 px-4 py-3">
               <button
                 type="button"
-                onClick={() => {
-                  setSelected(null);
-                  setActiveServing(null);
-                }}
-                className="shrink-0 text-xs text-brand-600 hover:underline"
+                onClick={handleAdd}
+                disabled={adding}
+                className="btn-primary w-full"
               >
-                Change
+                {adding ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Plus className="h-4 w-4" />
+                )}
+                Add to {MEAL_LABELS[mealType]}
               </button>
             </div>
-
-            {/* Serving size chips */}
-            {selected.servings && selected.servings.length > 0 && (
-              <div className="flex flex-wrap gap-1.5">
-                {selected.servings.map((s) => {
-                  const isActive =
-                    activeServing?.label === s.label && qty === s.grams;
-                  return (
-                    <button
-                      key={s.label}
-                      type="button"
-                      onClick={() => {
-                        setActiveServing(s);
-                        setQty(s.grams);
-                      }}
-                      className={
-                        isActive
-                          ? "rounded-full bg-brand-600 px-2.5 py-1 text-xs font-medium text-white"
-                          : "rounded-full border border-slate-200 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-100"
-                      }
-                    >
-                      {s.label}
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-
-            {/* Quantity input (custom grams) */}
-            <div className="flex items-center gap-2">
-              <label className="text-sm text-slate-600 shrink-0">
-                {selected.servings && selected.servings.length > 0
-                  ? "Or custom (g)"
-                  : "Quantity (g)"}
-              </label>
-              <input
-                type="number"
-                min={1}
-                max={9999}
-                value={qty}
-                onChange={(e) => {
-                  setQty(Math.max(1, Number(e.target.value)));
-                  setActiveServing(null); // typing custom amount clears chip
-                }}
-                className="input w-24 text-right"
-              />
-            </div>
-
-            {/* Live preview */}
-            <div className="grid grid-cols-4 gap-2 text-center text-xs">
-              {[
-                { label: "Calories", val: computed.calories, unit: "kcal", cls: "text-slate-800 font-semibold" },
-                { label: "Protein", val: computed.protein, unit: "g", cls: "text-emerald-700" },
-                { label: "Carbs", val: computed.carbs, unit: "g", cls: "text-amber-700" },
-                { label: "Fat", val: computed.fat, unit: "g", cls: "text-violet-700" },
-              ].map(({ label, val, unit, cls }) => (
-                <div key={label} className="rounded bg-white p-1.5 shadow-sm">
-                  <div className={`font-medium tabular-nums ${cls}`}>
-                    {Math.round(val)}{unit}
-                  </div>
-                  <div className="text-slate-400">{label}</div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* Error */}
-        {error && (
-          <p className="mb-2 text-sm text-red-600">{error}</p>
-        )}
-
-        {/* Add button */}
-        {selected && (
-          <button
-            type="button"
-            onClick={handleAdd}
-            disabled={adding}
-            className="btn-primary w-full"
-          >
-            {adding ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <Plus className="h-4 w-4" />
-            )}
-            Add to {mealLabels[mealType]}
-          </button>
-        )}
+          )}
+        </div>
       </div>
-    </div>
+
+      {/* Barcode scanner (lazy-loaded) */}
+      {showScanner && (
+        <Suspense
+          fallback={
+            <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black">
+              <Loader2 className="h-8 w-8 animate-spin text-white" />
+            </div>
+          }
+        >
+          <BarcodeScanner
+            onDetected={handleBarcodeDetected}
+            onClose={() => setShowScanner(false)}
+          />
+        </Suspense>
+      )}
+
+      {/* Custom food creator */}
+      {showCustom && (
+        <CustomFoodModal
+          onClose={() => setShowCustom(false)}
+          onSaved={(food) => {
+            setCustomFoods((prev) => [food, ...prev]);
+            setShowCustom(false);
+            // Auto-select the just-created food
+            setSelected(customFoodToResult(food));
+            setSelectedSource("mine");
+            setQty(100);
+            setActiveServing(null);
+          }}
+        />
+      )}
+    </>
   );
+}
+
+// ============================================================
+// Helpers
+// ============================================================
+function customFoodToResult(cf: CustomFood): FoodSearchResult {
+  return {
+    product_name: cf.name,
+    calories_per_100g: cf.calories_per_100g,
+    protein_per_100g: cf.protein_per_100g,
+    carbs_per_100g: cf.carbs_per_100g,
+    fat_per_100g: cf.fat_per_100g,
+  };
+}
+
+function SourceBadge({ source }: { source: Source }) {
+  if (source === "mine") {
+    return (
+      <span className="shrink-0 rounded-full bg-emerald-50 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-700">
+        Mine
+      </span>
+    );
+  }
+  if (source === "common") {
+    return (
+      <span className="shrink-0 rounded-full bg-brand-50 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-brand-700">
+        Common
+      </span>
+    );
+  }
+  return null;
 }

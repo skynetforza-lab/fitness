@@ -280,3 +280,28 @@ alter table public.food_logs enable row level security;
 drop policy if exists "food_logs_owner" on public.food_logs;
 create policy "food_logs_owner" on public.food_logs
   for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
+
+-- ---------------------------------------------------------------
+-- Custom foods (user-created foods + recipes)
+-- ---------------------------------------------------------------
+create table if not exists public.custom_foods (
+  id                uuid primary key default gen_random_uuid(),
+  user_id           uuid not null references auth.users(id) on delete cascade,
+  name              text not null,
+  calories_per_100g numeric(8,1) not null,
+  protein_per_100g  numeric(8,2) not null default 0,
+  carbs_per_100g    numeric(8,2) not null default 0,
+  fat_per_100g      numeric(8,2) not null default 0,
+  ingredients       jsonb,        -- [{name, grams, calories, protein, carbs, fat}, ...]
+  total_grams       numeric(8,1), -- total weight of the recipe (when is_recipe = true)
+  is_recipe         boolean not null default false,
+  created_at        timestamptz not null default now()
+);
+
+create index if not exists custom_foods_user_idx on public.custom_foods (user_id);
+
+alter table public.custom_foods enable row level security;
+
+drop policy if exists "custom_foods_owner" on public.custom_foods;
+create policy "custom_foods_owner" on public.custom_foods
+  for all using (auth.uid() = user_id) with check (auth.uid() = user_id);

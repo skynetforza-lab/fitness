@@ -119,6 +119,30 @@ export const DEFAULT_GOALS: NutritionGoals = {
   fat: 65,
 };
 
+// ---------- Custom foods & recipes ----------
+export interface RecipeIngredient {
+  name: string;
+  grams: number;
+  calories: number;  // total kcal for this ingredient amount
+  protein: number;   // total g
+  carbs: number;     // total g
+  fat: number;       // total g
+}
+
+export interface CustomFood {
+  id: string;
+  user_id: string;
+  name: string;
+  calories_per_100g: number;
+  protein_per_100g: number;
+  carbs_per_100g: number;
+  fat_per_100g: number;
+  ingredients: RecipeIngredient[] | null;
+  total_grams: number | null;
+  is_recipe: boolean;
+  created_at: string;
+}
+
 // ---------- Workout schedules ----------
 export interface WorkoutSchedule {
   id: string;

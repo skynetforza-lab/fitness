@@ -74,11 +74,11 @@ export default function NutritionPage() {
   return (
     <div className="mx-auto max-w-2xl space-y-4 px-4 py-4">
       {/* Date header */}
-      <div className="card flex items-center gap-2 p-3">
+      <div className="card flex items-center gap-1 p-2">
         <button
           type="button"
           onClick={() => navigateDay(-1)}
-          className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100"
+          className="flex h-11 w-11 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 active:bg-slate-200"
           aria-label="Previous day"
         >
           <ChevronLeft className="h-5 w-5" />
@@ -89,7 +89,7 @@ export default function NutritionPage() {
         <button
           type="button"
           onClick={() => navigateDay(1)}
-          className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100"
+          className="flex h-11 w-11 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 active:bg-slate-200"
           aria-label="Next day"
         >
           <ChevronRight className="h-5 w-5" />
@@ -97,10 +97,10 @@ export default function NutritionPage() {
         <button
           type="button"
           onClick={() => setShowGoals(true)}
-          className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100"
-          title="Set daily goals"
+          className="flex h-11 w-11 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 active:bg-slate-200"
+          aria-label="Set daily goals"
         >
-          <Settings className="h-4 w-4" />
+          <Settings className="h-5 w-5" />
         </button>
       </div>
 
