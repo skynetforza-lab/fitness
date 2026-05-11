@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Search, X, Loader2, Plus } from "lucide-react";
 import type { FoodLog, FoodSearchResult } from "@/lib/types";
-import { searchFood } from "@/lib/nutrition";
+import { searchLocalFoods, searchRemoteFoods } from "@/lib/nutrition";
 import { addFoodLog } from "@/lib/db";
 
 interface Props {
@@ -11,14 +11,20 @@ interface Props {
   onClose: () => void;
 }
 
+interface ResultItem {
+  food: FoodSearchResult;
+  source: "common" | "branded";
+}
+
 export default function FoodSearchModal({ mealType, date, onAdded, onClose }: Props) {
   const [query, setQuery] = useState("");
-  const [results, setResults] = useState<FoodSearchResult[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [localResults, setLocalResults] = useState<ResultItem[]>([]);
+  const [remoteResults, setRemoteResults] = useState<ResultItem[]>([]);
+  const [remoteLoading, setRemoteLoading] = useState(false);
   const [selected, setSelected] = useState<FoodSearchResult | null>(null);
   const [qty, setQty] = useState(100);
   const [adding, setAdding] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -29,28 +35,43 @@ export default function FoodSearchModal({ mealType, date, onAdded, onClose }: Pr
 
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
-    if (!query.trim()) {
-      setResults([]);
-      setError(null);
+
+    const q = query.trim();
+    if (!q) {
+      setLocalResults([]);
+      setRemoteResults([]);
+      setRemoteLoading(false);
       return;
     }
+
+    // Instant local search
+    const local = searchLocalFoods(q).map(
+      (food): ResultItem => ({ food, source: "common" }),
+    );
+    setLocalResults(local);
+    setRemoteResults([]);
+
+    // Debounced remote search
+    setRemoteLoading(true);
     debounceRef.current = setTimeout(async () => {
-      setLoading(true);
-      setError(null);
-      try {
-        const items = await searchFood(query.trim());
-        setResults(items);
-        if (items.length === 0) setError("No results found — try a different name");
-      } catch {
-        setError("Search failed. Check your connection and try again.");
-      } finally {
-        setLoading(false);
-      }
+      const remote = await searchRemoteFoods(q);
+      // Filter out remote items whose name already appears in local
+      const localNames = new Set(local.map((r) => r.food.product_name.toLowerCase()));
+      const filtered = remote
+        .filter((r) => !localNames.has(r.product_name.toLowerCase()))
+        .map((food): ResultItem => ({ food, source: "branded" }));
+      setRemoteResults(filtered);
+      setRemoteLoading(false);
     }, 400);
+
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
     };
   }, [query]);
+
+  const allResults = [...localResults, ...remoteResults];
+  const showNoResults =
+    query.trim() !== "" && !remoteLoading && allResults.length === 0;
 
   const computed = selected
     ? {
@@ -114,7 +135,7 @@ export default function FoodSearchModal({ mealType, date, onAdded, onClose }: Pr
           <input
             ref={inputRef}
             type="text"
-            placeholder="Search food (e.g. oats, chicken breast…)"
+            placeholder="Search food (e.g. boiled egg, paneer, biryani…)"
             value={query}
             onChange={(e) => {
               setQuery(e.target.value);
@@ -122,31 +143,47 @@ export default function FoodSearchModal({ mealType, date, onAdded, onClose }: Pr
             }}
             className="input pl-9"
           />
-          {loading && (
+          {remoteLoading && (
             <Loader2 className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 animate-spin text-slate-400" />
           )}
         </div>
 
-        {/* Error */}
-        {error && !selected && (
-          <p className="mb-2 text-sm text-slate-500">{error}</p>
+        {/* No-results state */}
+        {!selected && showNoResults && (
+          <p className="mb-2 text-sm text-slate-500">
+            No results found — try a simpler name or check the spelling
+          </p>
+        )}
+
+        {/* Hint when no query */}
+        {!selected && !query.trim() && (
+          <p className="mb-2 text-xs text-slate-400">
+            Try “egg”, “paneer”, “rice”, “chicken”, “oats”…
+          </p>
         )}
 
         {/* Results list */}
-        {!selected && results.length > 0 && (
-          <div className="mb-3 max-h-56 overflow-y-auto divide-y divide-slate-100 rounded-lg border border-slate-200">
-            {results.map((item, i) => (
+        {!selected && allResults.length > 0 && (
+          <div className="mb-3 max-h-72 overflow-y-auto divide-y divide-slate-100 rounded-lg border border-slate-200">
+            {allResults.map((item, i) => (
               <button
-                key={i}
+                key={`${item.source}-${i}`}
                 type="button"
-                onClick={() => { setSelected(item); setQty(100); }}
-                className="flex w-full items-center justify-between px-3 py-2.5 text-left hover:bg-slate-50"
+                onClick={() => { setSelected(item.food); setQty(100); }}
+                className="flex w-full items-center justify-between gap-2 px-3 py-2.5 text-left hover:bg-slate-50"
               >
-                <span className="text-sm font-medium text-slate-800 line-clamp-1">
-                  {item.product_name}
-                </span>
+                <div className="flex min-w-0 items-center gap-2">
+                  <span className="text-sm font-medium text-slate-800 line-clamp-1">
+                    {item.food.product_name}
+                  </span>
+                  {item.source === "common" && (
+                    <span className="shrink-0 rounded-full bg-brand-50 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-brand-700">
+                      Common
+                    </span>
+                  )}
+                </div>
                 <span className="ml-3 shrink-0 text-xs text-slate-500">
-                  {Math.round(item.calories_per_100g)} kcal/100g
+                  {Math.round(item.food.calories_per_100g)} kcal/100g
                 </span>
               </button>
             ))}
@@ -199,6 +236,11 @@ export default function FoodSearchModal({ mealType, date, onAdded, onClose }: Pr
               ))}
             </div>
           </div>
+        )}
+
+        {/* Error */}
+        {error && (
+          <p className="mb-2 text-sm text-red-600">{error}</p>
         )}
 
         {/* Add button */}
