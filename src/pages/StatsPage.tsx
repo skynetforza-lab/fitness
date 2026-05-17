@@ -26,8 +26,8 @@ export default function StatsPage() {
       <div className="card p-4">
         <h1 className="text-xl font-semibold">Stats & progress</h1>
         <p className="text-sm text-slate-600">
-          Tracking starts 5 May 2026. Cumulative and target counts ignore days
-          before that.
+          Tracking starts 18 May 2026 (228-day target). Cumulative and target
+          counts ignore days before that.
         </p>
       </div>
 

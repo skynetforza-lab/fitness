@@ -71,6 +71,22 @@ export async function upsertDailyLog(
   return data as DailyLog;
 }
 
+/**
+ * Marks the "workout" habit as true for the given date without disturbing
+ * other habits. No-op if it's already true. Called automatically when a
+ * set is logged so the user doesn't have to tick the box manually.
+ */
+export async function markWorkoutDone(dateISO: string): Promise<void> {
+  const existing = await fetchDailyLog(dateISO);
+  if (existing?.workout) return;
+  await upsertDailyLog(dateISO, {
+    workout: true,
+    trainer: existing?.trainer ?? false,
+    steps_10k: existing?.steps_10k ?? false,
+    clean_eating: existing?.clean_eating ?? false,
+  });
+}
+
 // ---------- exercises ----------
 export async function fetchExercises(): Promise<Exercise[]> {
   const { data, error } = await supabase

@@ -12,6 +12,7 @@ import {
   fetchSetsForDate,
   fetchSetsForExercise,
   getOrCreateSession,
+  markWorkoutDone,
   updateSet,
 } from "@/lib/db";
 import type {
@@ -180,6 +181,8 @@ export default function WorkoutLogger({ dateISO }: Props) {
       setWeight("");
       setReps("");
       void checkPR(selectedId, created.id);
+      // Auto-tick the "workout" habit for this day. Fire-and-forget.
+      void markWorkoutDone(dateISO);
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -248,6 +251,8 @@ export default function WorkoutLogger({ dateISO }: Props) {
           }
         }
       }
+      // Loading a schedule = working out today. Auto-tick the habit.
+      if (scheduleExercises.length > 0) void markWorkoutDone(dateISO);
     } catch (e) {
       setError(`Failed to load schedule: ${(e as Error).message}`);
     } finally {

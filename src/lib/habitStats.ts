@@ -14,7 +14,7 @@ export interface HabitSummary {
   hitCumulative: number;
   missed: number;
   target: number;
-  elapsed: number; // days from May 4 through today (inclusive)
+  elapsed: number; // days from SCHEDULE_START through today (inclusive)
 }
 
 function dateInRange(d: Date, from: Date, to: Date): boolean {
@@ -29,7 +29,7 @@ export function summarise(
   const weekStart = startOfWeek(today, { weekStartsOn: 1 }); // Monday
   const monthStart = startOfMonth(today);
 
-  // Days elapsed since May 4, capped at 0 for pre-start dates.
+  // Days elapsed since SCHEDULE_START, capped at 0 for pre-start dates.
   const rawElapsed = differenceInCalendarDays(today, SCHEDULE_START) + 1;
   const elapsed = Math.max(0, rawElapsed);
 

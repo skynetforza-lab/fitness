@@ -68,6 +68,7 @@ export default function FoodSearchModal({
   const [showScanner, setShowScanner] = useState(false);
   const [showCustom, setShowCustom] = useState(false);
   const [barcodeStatus, setBarcodeStatus] = useState<string | null>(null);
+  const [missingBarcode, setMissingBarcode] = useState<string | null>(null);
 
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -151,12 +152,13 @@ export default function FoodSearchModal({
 
   async function handleBarcodeDetected(code: string) {
     setShowScanner(false);
-    setBarcodeStatus("Looking up barcode…");
+    setBarcodeStatus(`Looking up barcode ${code}…`);
     setError(null);
+    setMissingBarcode(null);
     const product = await lookupBarcode(code);
     if (!product) {
       setBarcodeStatus(null);
-      setError(`No product found for barcode ${code}. Try creating it manually.`);
+      setMissingBarcode(code);
       return;
     }
     setBarcodeStatus(null);
@@ -268,6 +270,38 @@ export default function FoodSearchModal({
                     <Loader2 className="h-4 w-4 animate-spin" />
                     {barcodeStatus}
                   </p>
+                )}
+
+                {/* Barcode not found — offer to create custom */}
+                {missingBarcode && (
+                  <div className="mb-3 rounded-lg border border-amber-200 bg-amber-50 p-3">
+                    <p className="text-sm font-medium text-amber-900">
+                      Barcode {missingBarcode} not in our database
+                    </p>
+                    <p className="mt-1 text-xs text-amber-800">
+                      Many Indian and regional products aren't in Open Food Facts yet.
+                      Create it as a custom food and we'll save it to your library.
+                    </p>
+                    <div className="mt-3 flex gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowCustom(true);
+                          setMissingBarcode(null);
+                        }}
+                        className="flex-1 rounded-md bg-amber-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-amber-700"
+                      >
+                        Create custom food
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setMissingBarcode(null)}
+                        className="rounded-md px-3 py-1.5 text-xs font-medium text-amber-700 hover:bg-amber-100"
+                      >
+                        Dismiss
+                      </button>
+                    </div>
+                  </div>
                 )}
 
                 {/* Error */}

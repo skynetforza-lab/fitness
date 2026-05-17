@@ -62,7 +62,7 @@ export default function CalendarPage() {
         <div>
           <h1 className="text-xl font-semibold">Your fitness calendar</h1>
           <p className="text-sm text-slate-600">
-            Schedule starts <strong>5 May 2026</strong>. Tap a day to mark your
+            Schedule starts <strong>18 May 2026</strong>. Tap a day to mark your
             habits and log a workout.
           </p>
         </div>

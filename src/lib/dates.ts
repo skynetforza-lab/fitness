@@ -1,11 +1,12 @@
 import { format, parseISO } from "date-fns";
 
-// Schedule starts May 5, 2026.
-export const SCHEDULE_START = new Date(2026, 4, 5); // month is 0-indexed (April=3, May=4)
+// Schedule starts May 18, 2026.
+export const SCHEDULE_START = new Date(2026, 4, 18); // month is 0-indexed (May = 4)
 export const SCHEDULE_END_2026 = new Date(2026, 11, 31);
 
-// 240 days: May 5 → Dec 31, 2026.
-export const TARGET_DAYS_2026 = 240;
+// 228 days: May 18 → Dec 31, 2026 inclusive
+// (14 + 30 + 31 + 31 + 30 + 31 + 30 + 31)
+export const TARGET_DAYS_2026 = 228;
 
 export function toISODate(d: Date): string {
   return format(d, "yyyy-MM-dd");
