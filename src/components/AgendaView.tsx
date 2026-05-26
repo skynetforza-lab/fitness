@@ -17,7 +17,7 @@ import {
 } from "lucide-react";
 import { Link } from "react-router-dom";
 import { isBeforeStart, SCHEDULE_START, toISODate } from "@/lib/dates";
-import { HABIT_COLORS, HABIT_KEYS } from "@/lib/types";
+import { HABIT_COLORS, HABIT_KEYS, HABIT_LABELS } from "@/lib/types";
 import type { DailyLog } from "@/lib/types";
 import { cn } from "@/lib/cn";
 
@@ -46,41 +46,37 @@ export default function AgendaView({
   onSelectDate,
   today,
 }: Props) {
-  // Build the list of days for the current month, descending (newest first).
-  // Skip days before SCHEDULE_START and after today.
+  // All days of the month, ascending (oldest → newest)
   const days = useMemo(() => {
     const start = startOfMonth(month);
     const end = endOfMonth(month);
     const out: Date[] = [];
     for (let d = start; d <= end; d = addDays(d, 1)) {
-      if (isBeforeStart(d)) continue;
-      if (isAfter(d, today)) continue;
       out.push(d);
     }
-    return out.reverse(); // newest day at top
-  }, [month, today]);
+    return out;
+  }, [month]);
 
   const canGoPrev =
     startOfMonth(addMonths(month, -1)) >= startOfMonth(SCHEDULE_START);
-  const canGoNext = !isAfter(startOfMonth(addMonths(month, 1)), today);
-
+  const canGoNext = true; // allow scrolling forward freely
   const showJumpToday =
     startOfMonth(month).getTime() !== startOfMonth(today).getTime();
 
-  // Auto-scroll today's row into view on mount / when month changes to today's month
+  // Auto-scroll today's row into view when the displayed month contains today
   const todayRowRef = useRef<HTMLLIElement | null>(null);
   useEffect(() => {
     if (
       startOfMonth(month).getTime() === startOfMonth(today).getTime() &&
       todayRowRef.current
     ) {
-      todayRowRef.current.scrollIntoView({ block: "start", behavior: "auto" });
+      todayRowRef.current.scrollIntoView({ block: "center", behavior: "auto" });
     }
   }, [month, today]);
 
   return (
     <div className="card overflow-hidden">
-      {/* Sticky month header */}
+      {/* Sticky month header with prev/next + Today */}
       <div className="sticky top-14 z-10 flex items-center justify-between gap-2 border-b border-slate-200 bg-white/95 px-3 py-2 backdrop-blur">
         <button
           type="button"
@@ -115,79 +111,136 @@ export default function AgendaView({
       </div>
 
       {/* Days list */}
-      {days.length === 0 ? (
-        <div className="px-3 py-8 text-center text-sm text-slate-500">
-          No days to show this month.
-        </div>
-      ) : (
-        <ul className="divide-y divide-slate-100">
-          {days.map((d) => {
-            const iso = toISODate(d);
-            const log = logsByDate.get(iso);
-            const isToday = isSameDay(d, today);
-            const hasWorkout = workoutDates.has(iso);
-            const cals = caloriesByDate.get(iso) ?? 0;
-            const plank = log?.plank_seconds ?? 0;
+      <ul className="divide-y divide-slate-100">
+        {days.map((d) => {
+          const iso = toISODate(d);
+          const log = logsByDate.get(iso);
+          const isToday = isSameDay(d, today);
+          const beforeStart = isBeforeStart(d);
+          const isFuture = isAfter(d, today);
+          const disabled = beforeStart || isFuture;
 
-            const hitCount = HABIT_KEYS.filter((k) => log?.[k]).length;
-            const hasAnything =
-              hitCount > 0 || hasWorkout || cals > 0 || plank > 0;
+          const hasWorkout = workoutDates.has(iso);
+          const cals = caloriesByDate.get(iso) ?? 0;
+          const plank = log?.plank_seconds ?? 0;
+          const hasAnything =
+            HABIT_KEYS.some((k) => log?.[k]) ||
+            hasWorkout ||
+            cals > 0 ||
+            plank > 0;
 
-            return (
-              <li
-                key={iso}
-                ref={isToday ? todayRowRef : undefined}
+          return (
+            <li
+              key={iso}
+              ref={isToday ? todayRowRef : undefined}
+              className={cn(
+                "transition-colors",
+                isToday && "bg-brand-50/40",
+                disabled && "bg-slate-50/60",
+              )}
+            >
+              <div
+                role={disabled ? undefined : "button"}
+                tabIndex={disabled ? -1 : 0}
+                aria-disabled={disabled}
+                onClick={() => !disabled && onSelectDate(d)}
+                onKeyDown={(e) => {
+                  if (!disabled && (e.key === "Enter" || e.key === " ")) {
+                    e.preventDefault();
+                    onSelectDate(d);
+                  }
+                }}
                 className={cn(
-                  "transition-colors",
-                  isToday && "bg-brand-50/40",
+                  "flex flex-col gap-2.5 px-3 py-3",
+                  !disabled && "cursor-pointer active:bg-slate-100",
                 )}
               >
-                <button
-                  type="button"
-                  onClick={() => onSelectDate(d)}
-                  className="flex w-full flex-col gap-2 px-3 py-3 text-left active:bg-slate-100"
-                >
-                  {/* Top row: date + habit dots */}
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="flex items-baseline gap-2">
-                      <span
-                        className={cn(
-                          "text-base font-semibold",
-                          isToday ? "text-brand-700" : "text-slate-900",
-                        )}
-                      >
-                        {format(d, "EEE")}
-                      </span>
-                      <span className="text-sm text-slate-500">
-                        {format(d, "MMM d")}
-                      </span>
-                      {isToday && (
-                        <span className="ml-1 rounded-full bg-brand-600 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-white">
-                          Today
-                        </span>
+                {/* Date header */}
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-baseline gap-2">
+                    <span
+                      className={cn(
+                        "text-base font-semibold",
+                        isToday
+                          ? "text-brand-700"
+                          : disabled
+                            ? "text-slate-400"
+                            : "text-slate-900",
                       )}
-                    </div>
-                    <div className="flex shrink-0 items-center gap-1.5">
-                      {HABIT_KEYS.map((k) => {
-                        const checked = log?.[k] ?? false;
-                        return (
+                    >
+                      {format(d, "EEE")}
+                    </span>
+                    <span
+                      className={cn(
+                        "text-sm",
+                        disabled ? "text-slate-400" : "text-slate-500",
+                      )}
+                    >
+                      {format(d, "MMM d")}
+                    </span>
+                  </div>
+                  {isToday && (
+                    <span className="rounded-full bg-brand-600 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-white">
+                      Today
+                    </span>
+                  )}
+                  {beforeStart && (
+                    <span className="rounded-full bg-slate-200 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-slate-500">
+                      Before schedule
+                    </span>
+                  )}
+                  {isFuture && (
+                    <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-slate-500">
+                      Upcoming
+                    </span>
+                  )}
+                </div>
+
+                {/* Habit checklist: 2×2 grid with dot + label */}
+                {!disabled && (
+                  <div className="grid grid-cols-2 gap-x-3 gap-y-1.5">
+                    {HABIT_KEYS.map((k) => {
+                      const checked = log?.[k] ?? false;
+                      return (
+                        <div
+                          key={k}
+                          className="flex items-center gap-2"
+                        >
                           <span
-                            key={k}
                             className={cn(
-                              "block h-3 w-3 rounded-full",
-                              checked ? "" : "border border-slate-300 bg-white",
+                              "block h-3 w-3 shrink-0 rounded-full",
+                              checked
+                                ? "shadow-sm"
+                                : "border-2 border-slate-300 bg-white",
                             )}
                             style={
                               checked ? { background: HABIT_COLORS[k] } : undefined
                             }
                           />
-                        );
-                      })}
-                    </div>
+                          <span
+                            className={cn(
+                              "text-sm",
+                              checked
+                                ? "font-medium text-slate-800"
+                                : "text-slate-400",
+                            )}
+                          >
+                            {HABIT_LABELS[k]}
+                          </span>
+                        </div>
+                      );
+                    })}
                   </div>
+                )}
 
-                  {/* Bottom row: activity summary */}
-                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-600">
+                {/* Activity summary */}
+                {!disabled && (
+                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
+                    {!hasAnything && (
+                      <span className="italic text-slate-400">
+                        Nothing logged yet
+                      </span>
+                    )}
                     {hasWorkout && (
                       <span className="flex items-center gap-1 font-medium text-emerald-700">
                         <Dumbbell className="h-3.5 w-3.5" />
@@ -209,40 +262,35 @@ export default function AgendaView({
                         Plank {formatPlank(plank)}
                       </span>
                     )}
-                    {!hasAnything && (
-                      <span className="italic text-slate-400">
-                        Nothing logged
-                      </span>
-                    )}
                   </div>
+                )}
 
-                  {/* Today: quick action chips */}
-                  {isToday && (
-                    <div className="mt-1 flex gap-2">
-                      <Link
-                        to={`/workout/${iso}`}
-                        onClick={(e) => e.stopPropagation()}
-                        className="flex items-center gap-1 rounded-md bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700 hover:bg-emerald-100"
-                      >
-                        <Dumbbell className="h-3.5 w-3.5" />
-                        Log workout
-                      </Link>
-                      <Link
-                        to={`/nutrition/${iso}`}
-                        onClick={(e) => e.stopPropagation()}
-                        className="flex items-center gap-1 rounded-md bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-700 hover:bg-amber-100"
-                      >
-                        <Utensils className="h-3.5 w-3.5" />
-                        Log food
-                      </Link>
-                    </div>
-                  )}
-                </button>
-              </li>
-            );
-          })}
-        </ul>
-      )}
+                {/* Today: quick-action chips */}
+                {isToday && (
+                  <div className="mt-1 flex gap-2">
+                    <Link
+                      to={`/workout/${iso}`}
+                      onClick={(e) => e.stopPropagation()}
+                      className="flex items-center gap-1 rounded-md bg-emerald-50 px-2.5 py-1.5 text-xs font-semibold text-emerald-700 active:bg-emerald-100"
+                    >
+                      <Dumbbell className="h-3.5 w-3.5" />
+                      Log workout
+                    </Link>
+                    <Link
+                      to={`/nutrition/${iso}`}
+                      onClick={(e) => e.stopPropagation()}
+                      className="flex items-center gap-1 rounded-md bg-amber-50 px-2.5 py-1.5 text-xs font-semibold text-amber-700 active:bg-amber-100"
+                    >
+                      <Utensils className="h-3.5 w-3.5" />
+                      Log food
+                    </Link>
+                  </div>
+                )}
+              </div>
+            </li>
+          );
+        })}
+      </ul>
     </div>
   );
 }
