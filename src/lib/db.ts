@@ -348,6 +348,47 @@ export async function upsertNutritionGoals(goals: {
   if (error) throw error;
 }
 
+// ---------- Aggregations for the agenda calendar view ----------
+
+/**
+ * Returns the set of dates in the given range on which the current user
+ * has any workout_session row. Used by the mobile agenda calendar to
+ * render a "workout logged" indicator per day.
+ */
+export async function fetchWorkoutDatesInRange(
+  fromISO: string,
+  toISO: string,
+): Promise<Set<string>> {
+  const { data, error } = await supabase
+    .from("workout_sessions")
+    .select("date")
+    .gte("date", fromISO)
+    .lte("date", toISO);
+  if (error) throw error;
+  return new Set(((data ?? []) as { date: string }[]).map((r) => r.date));
+}
+
+/**
+ * Returns total calories per date in the given range for the current user.
+ * Map key is ISO date (YYYY-MM-DD), value is the sum of food_log.calories.
+ */
+export async function fetchCaloriesByDateInRange(
+  fromISO: string,
+  toISO: string,
+): Promise<Map<string, number>> {
+  const { data, error } = await supabase
+    .from("food_logs")
+    .select("date, calories")
+    .gte("date", fromISO)
+    .lte("date", toISO);
+  if (error) throw error;
+  const map = new Map<string, number>();
+  for (const row of (data ?? []) as { date: string; calories: number }[]) {
+    map.set(row.date, (map.get(row.date) ?? 0) + Number(row.calories));
+  }
+  return map;
+}
+
 // ---------- Food logs ----------
 
 export async function fetchFoodLogs(dateISO: string): Promise<FoodLog[]> {

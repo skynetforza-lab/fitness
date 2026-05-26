@@ -7,10 +7,18 @@ import {
 } from "date-fns";
 import { Dumbbell, Utensils } from "lucide-react";
 import { Link } from "react-router-dom";
+import AgendaView from "@/components/AgendaView";
 import CalendarView from "@/components/CalendarView";
 import DayDetailDialog from "@/components/DayDetailDialog";
-import { fetchDailyLogs, upsertDailyLog } from "@/lib/db";
+import {
+  fetchCaloriesByDateInRange,
+  fetchDailyLogs,
+  fetchMyProfile,
+  fetchWorkoutDatesInRange,
+  upsertDailyLog,
+} from "@/lib/db";
 import { SCHEDULE_START, toISODate } from "@/lib/dates";
+import { DEFAULT_GOALS } from "@/lib/types";
 import type { DailyLog, HabitKey } from "@/lib/types";
 
 export default function CalendarPage() {
@@ -19,14 +27,54 @@ export default function CalendarPage() {
     today < SCHEDULE_START ? SCHEDULE_START : today,
   );
   const [logs, setLogs] = useState<DailyLog[]>([]);
+  const [workoutDates, setWorkoutDates] = useState<Set<string>>(new Set());
+  const [caloriesByDate, setCaloriesByDate] = useState<Map<string, number>>(
+    new Map(),
+  );
+  const [caloriesGoal, setCaloriesGoal] = useState<number>(DEFAULT_GOALS.calories);
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
 
-  const fromISO = toISODate(startOfWeek(startOfMonth(month), { weekStartsOn: 1 }));
-  const toISO = toISODate(endOfWeek(endOfMonth(month), { weekStartsOn: 1 }));
+  // Grid view needs the week-padded range; agenda only needs the month itself.
+  const gridFromISO = toISODate(
+    startOfWeek(startOfMonth(month), { weekStartsOn: 1 }),
+  );
+  const gridToISO = toISODate(
+    endOfWeek(endOfMonth(month), { weekStartsOn: 1 }),
+  );
+  const monthFromISO = toISODate(startOfMonth(month));
+  const monthToISO = toISODate(endOfMonth(month));
 
+  // Daily habits cover the wider grid range (for desktop)
   useEffect(() => {
-    fetchDailyLogs(fromISO, toISO).then(setLogs);
-  }, [fromISO, toISO]);
+    fetchDailyLogs(gridFromISO, gridToISO).then(setLogs);
+  }, [gridFromISO, gridToISO]);
+
+  // Workout sessions + calories cover the month range (for agenda)
+  useEffect(() => {
+    let cancelled = false;
+    Promise.all([
+      fetchWorkoutDatesInRange(monthFromISO, monthToISO),
+      fetchCaloriesByDateInRange(monthFromISO, monthToISO),
+    ]).then(([dates, cals]) => {
+      if (cancelled) return;
+      setWorkoutDates(dates);
+      setCaloriesByDate(cals);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [monthFromISO, monthToISO]);
+
+  // User's calorie goal — load once on mount
+  useEffect(() => {
+    fetchMyProfile()
+      .then((p) => {
+        if (p?.calories_goal) setCaloriesGoal(p.calories_goal);
+      })
+      .catch(() => {
+        /* ignore */
+      });
+  }, []);
 
   const logsByDate = useMemo(() => {
     const m = new Map<string, DailyLog>();
@@ -34,7 +82,9 @@ export default function CalendarPage() {
     return m;
   }, [logs]);
 
-  const selectedLog = selectedDate ? logsByDate.get(toISODate(selectedDate)) ?? null : null;
+  const selectedLog = selectedDate
+    ? logsByDate.get(toISODate(selectedDate)) ?? null
+    : null;
 
   async function handleToggle(habit: HabitKey, next: boolean) {
     if (!selectedDate) return;
@@ -67,47 +117,64 @@ export default function CalendarPage() {
           </p>
         </div>
         {canLogToday && (
-          <div className="flex shrink-0 gap-2">
+          <div className="hidden shrink-0 gap-2 sm:flex">
             <Link
               to={`/workout/${todayISO}`}
               className="btn-primary whitespace-nowrap"
             >
               <Dumbbell className="h-4 w-4" />
-              <span className="hidden sm:inline">Log workout</span>
-              <span className="sm:hidden">Workout</span>
+              Log workout
             </Link>
             <Link
               to={`/nutrition/${todayISO}`}
               className="btn-secondary whitespace-nowrap"
             >
               <Utensils className="h-4 w-4" />
-              <span className="hidden sm:inline">Log food</span>
-              <span className="sm:hidden">Food</span>
+              Log food
             </Link>
           </div>
         )}
       </div>
-      <CalendarView
-        month={month}
-        setMonth={setMonth}
-        logsByDate={logsByDate}
-        onSelectDate={setSelectedDate}
-        onToggleHabit={async (iso, habit, next) => {
-          const existing = logsByDate.get(iso);
-          const updated = await upsertDailyLog(iso, {
-            workout: existing?.workout ?? false,
-            trainer: existing?.trainer ?? false,
-            steps_10k: existing?.steps_10k ?? false,
-            clean_eating: existing?.clean_eating ?? false,
-            [habit]: next,
-          });
-          setLogs((prev) => {
-            const without = prev.filter((l) => l.date !== iso);
-            return [...without, updated];
-          });
-        }}
-        today={today}
-      />
+
+      {/* Mobile: agenda list */}
+      <div className="sm:hidden">
+        <AgendaView
+          month={month}
+          setMonth={setMonth}
+          logsByDate={logsByDate}
+          workoutDates={workoutDates}
+          caloriesByDate={caloriesByDate}
+          caloriesGoal={caloriesGoal}
+          onSelectDate={setSelectedDate}
+          today={today}
+        />
+      </div>
+
+      {/* Desktop: grid */}
+      <div className="hidden sm:block">
+        <CalendarView
+          month={month}
+          setMonth={setMonth}
+          logsByDate={logsByDate}
+          onSelectDate={setSelectedDate}
+          onToggleHabit={async (iso, habit, next) => {
+            const existing = logsByDate.get(iso);
+            const updated = await upsertDailyLog(iso, {
+              workout: existing?.workout ?? false,
+              trainer: existing?.trainer ?? false,
+              steps_10k: existing?.steps_10k ?? false,
+              clean_eating: existing?.clean_eating ?? false,
+              [habit]: next,
+            });
+            setLogs((prev) => {
+              const without = prev.filter((l) => l.date !== iso);
+              return [...without, updated];
+            });
+          }}
+          today={today}
+        />
+      </div>
+
       <DayDetailDialog
         date={selectedDate}
         log={selectedLog}
