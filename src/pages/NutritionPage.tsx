@@ -1,13 +1,24 @@
-import { useEffect, useMemo, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { addDays, format, parseISO, subDays } from "date-fns";
-import { ChevronLeft, ChevronRight, Settings } from "lucide-react";
+import { addDays, format, getHours, parseISO, subDays } from "date-fns";
+import {
+  ChevronLeft,
+  ChevronRight,
+  Loader2,
+  Settings,
+  Sparkles,
+} from "lucide-react";
 import MacroSummaryBar from "@/components/MacroSummaryBar";
 import MealSection from "@/components/MealSection";
 import NutritionGoalsModal from "@/components/NutritionGoalsModal";
+import NutritionSummary from "@/components/NutritionSummary";
 import { fetchFoodLogs, fetchMyProfile } from "@/lib/db";
 import { DEFAULT_GOALS } from "@/lib/types";
 import type { FoodLog, NutritionGoals, UserProfile } from "@/lib/types";
+
+// Lazy-load the chat modal — its sibling imports are tiny but this keeps the
+// nutrition page initial render light.
+const ChatFoodModal = lazy(() => import("@/components/ChatFoodModal"));
 
 const MEALS: { key: FoodLog["meal_type"]; label: string; emoji: string }[] = [
   { key: "breakfast", label: "Breakfast", emoji: "🌅" },
@@ -16,6 +27,14 @@ const MEALS: { key: FoodLog["meal_type"]; label: string; emoji: string }[] = [
   { key: "snack", label: "Snacks", emoji: "🍎" },
 ];
 
+function defaultMealForNow(): FoodLog["meal_type"] {
+  const h = getHours(new Date());
+  if (h < 11) return "breakfast";
+  if (h < 15) return "lunch";
+  if (h < 21) return "dinner";
+  return "snack";
+}
+
 export default function NutritionPage() {
   const { date } = useParams<{ date: string }>();
   const navigate = useNavigate();
@@ -23,6 +42,7 @@ export default function NutritionPage() {
   const [logs, setLogs] = useState<FoodLog[]>([]);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [showGoals, setShowGoals] = useState(false);
+  const [showChat, setShowChat] = useState(false);
 
   const dateObj = useMemo(
     () => (date ? parseISO(date) : new Date()),
@@ -96,6 +116,15 @@ export default function NutritionPage() {
         </button>
         <button
           type="button"
+          onClick={() => setShowChat(true)}
+          className="flex h-11 items-center gap-1 rounded-lg bg-gradient-to-r from-brand-500 to-violet-500 px-3 text-sm font-semibold text-white shadow-sm hover:opacity-90 active:opacity-80"
+          aria-label="AI Quick Log"
+        >
+          <Sparkles className="h-4 w-4" />
+          <span className="hidden xs:inline">AI</span>
+        </button>
+        <button
+          type="button"
           onClick={() => setShowGoals(true)}
           className="flex h-11 w-11 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 active:bg-slate-200"
           aria-label="Set daily goals"
@@ -104,7 +133,7 @@ export default function NutritionPage() {
         </button>
       </div>
 
-      {/* Macro summary */}
+      {/* Macro summary (today) */}
       <MacroSummaryBar totals={totals} goals={goals} />
 
       {/* Meal sections */}
@@ -119,6 +148,9 @@ export default function NutritionPage() {
           onRefresh={load}
         />
       ))}
+
+      {/* Multi-day nutrition summary */}
+      <NutritionSummary />
 
       {/* Goals modal */}
       {showGoals && (
@@ -140,6 +172,24 @@ export default function NutritionPage() {
             setShowGoals(false);
           }}
         />
+      )}
+
+      {/* AI chat modal (lazy) */}
+      {showChat && (
+        <Suspense
+          fallback={
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+              <Loader2 className="h-8 w-8 animate-spin text-white" />
+            </div>
+          }
+        >
+          <ChatFoodModal
+            initialMealType={defaultMealForNow()}
+            date={date ?? format(new Date(), "yyyy-MM-dd")}
+            onAdded={load}
+            onClose={() => setShowChat(false)}
+          />
+        </Suspense>
       )}
     </div>
   );

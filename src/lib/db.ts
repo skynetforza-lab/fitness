@@ -401,6 +401,20 @@ export async function fetchFoodLogs(dateISO: string): Promise<FoodLog[]> {
   return data as FoodLog[];
 }
 
+export async function fetchFoodLogsInRange(
+  fromISO: string,
+  toISO: string,
+): Promise<FoodLog[]> {
+  const { data, error } = await supabase
+    .from("food_logs")
+    .select("*")
+    .gte("date", fromISO)
+    .lte("date", toISO)
+    .order("date");
+  if (error) throw error;
+  return (data ?? []) as FoodLog[];
+}
+
 export async function addFoodLog(entry: {
   date: string;
   meal_type: FoodLog["meal_type"];
