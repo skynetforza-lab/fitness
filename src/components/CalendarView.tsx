@@ -86,24 +86,36 @@ export default function CalendarView({
           const log = logsByDate.get(iso);
           const isToday = isSameDay(d, today);
 
+          const plankSec = log?.plank_seconds ?? 0;
+
           return (
             <div
               key={iso}
               className={cn(
-                "relative flex min-h-[60px] flex-col rounded-lg border p-1 text-xs transition",
+                "relative flex min-h-[72px] flex-col rounded-lg border p-1 text-xs transition sm:min-h-[60px]",
                 inMonth ? "bg-white" : "bg-slate-50 text-slate-400",
                 disabled ? "opacity-40" : "",
                 isToday && "border-brand-500 ring-2 ring-brand-200",
                 !isToday && "border-slate-200",
               )}
             >
-              {/* Date number — click opens detail dialog */}
+              {/* Mobile: whole-cell tap target — opens detail dialog */}
+              {!disabled && (
+                <button
+                  type="button"
+                  onClick={() => onSelectDate(d)}
+                  className="absolute inset-0 z-0 rounded-lg sm:hidden"
+                  aria-label={`Open ${format(d, "MMMM d")}`}
+                />
+              )}
+
+              {/* Date number — desktop tap target only (mobile uses the whole-cell button above) */}
               <button
                 type="button"
                 disabled={disabled}
                 onClick={() => onSelectDate(d)}
                 className={cn(
-                  "self-end rounded px-0.5 text-[11px] leading-none transition",
+                  "relative z-10 self-end rounded px-1 text-xs leading-none transition sm:text-[11px]",
                   disabled
                     ? "cursor-not-allowed"
                     : "hover:bg-brand-50 hover:text-brand-700",
@@ -114,49 +126,80 @@ export default function CalendarView({
                 {format(d, "d")}
               </button>
 
-              {/* Habit tick rows with labels */}
               {!disabled && (
-                <div className="mt-1 flex flex-col gap-0.5">
-                  {HABIT_KEYS.map((k) => {
-                    const checked = log?.[k] ?? false;
-                    const shortLabel =
-                      k === "steps_10k"
-                        ? "10K Steps"
-                        : k === "clean_eating"
-                          ? "Clean Eating"
-                          : k === "trainer"
-                            ? "Trainer"
-                            : "Workout";
-                    return (
-                      <button
-                        key={k}
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onToggleHabit(iso, k, !checked);
-                        }}
-                        aria-label={`${checked ? "Unmark" : "Mark"} ${shortLabel}`}
-                        className="flex items-center gap-1 rounded px-0.5 py-px transition hover:bg-slate-50"
-                      >
+                <>
+                  {/* Mobile: compact dots — read-only indicators, tap cell to edit */}
+                  <div className="relative z-0 mt-auto flex items-center gap-1 pt-1 sm:hidden">
+                    {HABIT_KEYS.map((k) => {
+                      const checked = log?.[k] ?? false;
+                      return (
                         <span
+                          key={k}
                           className={cn(
-                            "block h-2.5 w-2.5 shrink-0 rounded-full border transition",
-                            checked
-                              ? "border-transparent shadow-sm"
-                              : "border-slate-300 bg-white",
+                            "block h-2 w-2 rounded-full",
+                            checked ? "" : "border border-slate-300 bg-white",
                           )}
                           style={checked ? { background: HABIT_COLORS[k] } : undefined}
                         />
-                        <span
-                          className="truncate text-[9px] leading-none"
-                          style={{ color: checked ? HABIT_COLORS[k] : "#94a3b8" }}
+                      );
+                    })}
+                    {plankSec > 0 && (
+                      <span className="ml-auto text-[10px] font-medium tabular-nums text-slate-500">
+                        P {Math.floor(plankSec / 60)}:
+                        {String(plankSec % 60).padStart(2, "0")}
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Desktop: detailed toggleable habit rows */}
+                  <div className="relative z-10 mt-1 hidden flex-col gap-0.5 sm:flex">
+                    {HABIT_KEYS.map((k) => {
+                      const checked = log?.[k] ?? false;
+                      const shortLabel =
+                        k === "steps_10k"
+                          ? "10K Steps"
+                          : k === "clean_eating"
+                            ? "Clean Eating"
+                            : k === "trainer"
+                              ? "Trainer"
+                              : "Workout";
+                      return (
+                        <button
+                          key={k}
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onToggleHabit(iso, k, !checked);
+                          }}
+                          aria-label={`${checked ? "Unmark" : "Mark"} ${shortLabel}`}
+                          className="flex items-center gap-1 rounded px-0.5 py-px transition hover:bg-slate-50"
                         >
-                          {shortLabel}
-                        </span>
-                      </button>
-                    );
-                  })}
-                </div>
+                          <span
+                            className={cn(
+                              "block h-2.5 w-2.5 shrink-0 rounded-full border transition",
+                              checked
+                                ? "border-transparent shadow-sm"
+                                : "border-slate-300 bg-white",
+                            )}
+                            style={checked ? { background: HABIT_COLORS[k] } : undefined}
+                          />
+                          <span
+                            className="truncate text-[9px] leading-none"
+                            style={{ color: checked ? HABIT_COLORS[k] : "#94a3b8" }}
+                          >
+                            {shortLabel}
+                          </span>
+                        </button>
+                      );
+                    })}
+                    {plankSec > 0 && (
+                      <span className="mt-0.5 text-[9px] text-slate-500">
+                        🪵 {Math.floor(plankSec / 60)}:
+                        {String(plankSec % 60).padStart(2, "0")}
+                      </span>
+                    )}
+                  </div>
+                </>
               )}
             </div>
           );

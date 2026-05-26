@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import HabitPieChart from "@/components/HabitPieChart";
 import HabitSummaryCards from "@/components/HabitSummaryCards";
 import ExerciseProgressChart from "@/components/ExerciseProgressChart";
+import PlankProgressionChart from "@/components/PlankProgressionChart";
 import { fetchAllDailyLogs } from "@/lib/db";
 import { defaultRange, rangeStats } from "@/lib/habitStats";
 import { HABIT_KEYS } from "@/lib/types";
@@ -74,6 +75,13 @@ export default function StatsPage() {
             />
           ))}
         </div>
+      </section>
+
+      <section>
+        <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-slate-500">
+          Plank progression
+        </h2>
+        <PlankProgressionChart logs={logs} />
       </section>
 
       <section>

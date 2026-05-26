@@ -8,7 +8,14 @@ export interface DailyLog {
   steps_10k: boolean;
   clean_eating: boolean;
   notes: string | null;
+  plank_seconds: number | null;
   updated_at: string;
+}
+
+export interface PRSession {
+  date: string;
+  maxWeight: number;
+  sets: { set_number: number; weight_kg: number; reps: number }[];
 }
 
 export interface Exercise {

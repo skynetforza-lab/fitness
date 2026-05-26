@@ -113,6 +113,22 @@ export default function CalendarPage() {
         log={selectedLog}
         onClose={() => setSelectedDate(null)}
         onToggle={handleToggle}
+        onSavePlank={async (seconds) => {
+          if (!selectedDate) return;
+          const iso = toISODate(selectedDate);
+          const existing = logsByDate.get(iso);
+          const updated = await upsertDailyLog(iso, {
+            workout: existing?.workout ?? false,
+            trainer: existing?.trainer ?? false,
+            steps_10k: existing?.steps_10k ?? false,
+            clean_eating: existing?.clean_eating ?? false,
+            plank_seconds: seconds,
+          });
+          setLogs((prev) => {
+            const without = prev.filter((l) => l.date !== iso);
+            return [...without, updated];
+          });
+        }}
       />
     </div>
   );

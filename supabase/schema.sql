@@ -282,6 +282,12 @@ create policy "food_logs_owner" on public.food_logs
   for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
 
 -- ---------------------------------------------------------------
+-- Plank time on daily_logs
+-- ---------------------------------------------------------------
+alter table public.daily_logs
+  add column if not exists plank_seconds int;
+
+-- ---------------------------------------------------------------
 -- Custom foods (user-created foods + recipes)
 -- ---------------------------------------------------------------
 create table if not exists public.custom_foods (

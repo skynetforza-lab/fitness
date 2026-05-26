@@ -7,6 +7,7 @@ import type {
   ExerciseSetWithExercise,
   FoodLog,
   HabitKey,
+  PRSession,
   RecipeIngredient,
   WorkoutSession,
   WorkoutSchedule,
@@ -56,7 +57,7 @@ export async function fetchDailyLog(dateISO: string): Promise<DailyLog | null> {
 
 export async function upsertDailyLog(
   dateISO: string,
-  patch: Partial<Pick<DailyLog, HabitKey | "notes">>,
+  patch: Partial<Pick<DailyLog, HabitKey | "notes" | "plank_seconds">>,
 ): Promise<DailyLog> {
   const user_id = await uid();
   const { data, error } = await supabase
@@ -429,6 +430,88 @@ export async function addCustomFood(input: {
 export async function deleteCustomFood(id: string): Promise<void> {
   const { error } = await supabase.from("custom_foods").delete().eq("id", id);
   if (error) throw error;
+}
+
+// ---------- Save workout as schedule ----------
+
+/**
+ * Creates a new schedule from the workout logged on `dateISO`. Groups sets
+ * by exercise (preserving the order each exercise first appeared), uses
+ * set count + mode reps to populate schedule_exercises.
+ */
+export async function createScheduleFromDate(
+  name: string,
+  dateISO: string,
+): Promise<WorkoutSchedule> {
+  const sets = await fetchSetsForDate(dateISO);
+  if (sets.length === 0) throw new Error("No sets logged for this date.");
+
+  // Group by exercise, preserving the order each exercise first appeared.
+  const order: string[] = [];
+  const groups = new Map<string, { reps: number[]; lastReps: number }>();
+  for (const s of sets) {
+    if (!groups.has(s.exercise_id)) {
+      order.push(s.exercise_id);
+      groups.set(s.exercise_id, { reps: [], lastReps: s.reps });
+    }
+    const g = groups.get(s.exercise_id)!;
+    g.reps.push(s.reps);
+    g.lastReps = s.reps;
+  }
+
+  const schedule = await createSchedule(name);
+
+  for (let i = 0; i < order.length; i++) {
+    const exerciseId = order[i];
+    const g = groups.get(exerciseId)!;
+    // Mode reps (most common value); ties fall back to lastReps
+    const counts = new Map<number, number>();
+    for (const r of g.reps) counts.set(r, (counts.get(r) ?? 0) + 1);
+    let modeReps = g.lastReps;
+    let modeCount = 0;
+    for (const [r, c] of counts) {
+      if (c > modeCount) { modeReps = r; modeCount = c; }
+    }
+    await addScheduleExercise(schedule.id, exerciseId, g.reps.length, modeReps, i);
+  }
+
+  return schedule;
+}
+
+// ---------- Exercise PR session ----------
+
+/**
+ * Returns the workout session that contained the heaviest lift for this
+ * exercise, along with all sets from that session sorted by set_number.
+ * Ties on weight → most recent date wins.
+ */
+export async function fetchExercisePRSession(
+  exerciseId: string,
+): Promise<PRSession | null> {
+  const all = await fetchSetsForExercise(exerciseId);
+  if (all.length === 0) return null;
+
+  // Find the heaviest set (ties → most recent date)
+  let best = all[0];
+  for (const s of all) {
+    if (
+      s.weight_kg > best.weight_kg ||
+      (s.weight_kg === best.weight_kg && s.date > best.date)
+    ) {
+      best = s;
+    }
+  }
+
+  const prSets = all
+    .filter((s) => s.date === best.date)
+    .sort((a, b) => a.set_number - b.set_number)
+    .map(({ set_number, weight_kg, reps }) => ({ set_number, weight_kg, reps }));
+
+  return {
+    date: best.date,
+    maxWeight: best.weight_kg,
+    sets: prSets,
+  };
 }
 
 export async function fetchProfileForUser(userId: string): Promise<UserProfile | null> {

@@ -1,10 +1,21 @@
 import { useEffect, useMemo, useState } from "react";
-import { CalendarDays, Loader2, Plus, X } from "lucide-react";
+import {
+  BookmarkPlus,
+  CalendarDays,
+  Check,
+  Loader2,
+  Plus,
+  Trophy,
+  X,
+} from "lucide-react";
+import { format, parseISO } from "date-fns";
 import ExerciseCombobox from "./ExerciseCombobox";
 import SetRow from "./SetRow";
 import {
   addSet,
+  createScheduleFromDate,
   deleteSet,
+  fetchExercisePRSession,
   fetchExercises,
   fetchSchedules,
   fetchScheduleExercises,
@@ -18,6 +29,7 @@ import {
 import type {
   Exercise,
   ExerciseSetWithExercise,
+  PRSession,
   WorkoutSchedule,
 } from "@/lib/types";
 import { computePRs } from "@/lib/pr";
@@ -97,6 +109,17 @@ export default function WorkoutLogger({ dateISO }: Props) {
   const [prSetIds, setPrSetIds] = useState<Set<string>>(new Set());
   const [error, setError] = useState<string | null>(null);
 
+  // PR session for the currently selected exercise
+  const [prSession, setPrSession] = useState<PRSession | null>(null);
+  const [loadingPR, setLoadingPR] = useState(false);
+  const [loadingPRSets, setLoadingPRSets] = useState(false);
+
+  // Save-as-schedule modal state
+  const [showSaveSchedule, setShowSaveSchedule] = useState(false);
+  const [scheduleName, setScheduleName] = useState("");
+  const [savingSchedule, setSavingSchedule] = useState(false);
+  const [scheduleSavedMessage, setScheduleSavedMessage] = useState<string | null>(null);
+
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -134,6 +157,86 @@ export default function WorkoutLogger({ dateISO }: Props) {
     const existing = sets.filter((s) => s.exercise_id === selectedId);
     return existing.length + 1;
   }, [sets, selectedId]);
+
+  // Whether today already has any sets for the selected exercise
+  const hasTodaySetsForSelected = useMemo(() => {
+    if (!selectedId) return false;
+    return sets.some((s) => s.exercise_id === selectedId);
+  }, [sets, selectedId]);
+
+  // Fetch PR session whenever the selected exercise changes
+  useEffect(() => {
+    if (!selectedId) {
+      setPrSession(null);
+      return;
+    }
+    let cancelled = false;
+    setLoadingPR(true);
+    fetchExercisePRSession(selectedId)
+      .then((pr) => {
+        if (!cancelled) setPrSession(pr);
+      })
+      .catch(() => {
+        if (!cancelled) setPrSession(null);
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingPR(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedId]);
+
+  async function handleLoadPR() {
+    if (!prSession || !sessionId || !selectedId) return;
+    setLoadingPRSets(true);
+    setError(null);
+    try {
+      const ex = exercises.find((e) => e.id === selectedId);
+      for (let i = 0; i < prSession.sets.length; i++) {
+        const s = prSession.sets[i];
+        const created = await addSet({
+          sessionId,
+          exerciseId: selectedId,
+          setNumber: nextSetNumber + i,
+          weightKg: s.weight_kg,
+          reps: s.reps,
+        });
+        if (ex) {
+          setSets((prev) => [
+            ...prev,
+            {
+              ...created,
+              exercise: { id: ex.id, name: ex.name, muscle_group: ex.muscle_group },
+            } as ExerciseSetWithExercise,
+          ]);
+        }
+      }
+      void markWorkoutDone(dateISO);
+    } catch (e) {
+      setError(`Failed to load PR sets: ${(e as Error).message}`);
+    } finally {
+      setLoadingPRSets(false);
+    }
+  }
+
+  async function handleSaveSchedule(e: React.FormEvent) {
+    e.preventDefault();
+    if (!scheduleName.trim()) return;
+    setSavingSchedule(true);
+    setError(null);
+    try {
+      await createScheduleFromDate(scheduleName.trim(), dateISO);
+      setScheduleSavedMessage(`Saved "${scheduleName.trim()}" to your schedules.`);
+      setShowSaveSchedule(false);
+      setScheduleName("");
+      setTimeout(() => setScheduleSavedMessage(null), 3000);
+    } catch (err) {
+      setError(`Couldn't save schedule: ${(err as Error).message}`);
+    } finally {
+      setSavingSchedule(false);
+    }
+  }
 
   async function checkPR(exerciseId: string, newSetId: string) {
     const allSets = await fetchSetsForExercise(exerciseId);
@@ -269,22 +372,96 @@ export default function WorkoutLogger({ dateISO }: Props) {
         />
       )}
 
+      {/* Save-as-schedule modal */}
+      {showSaveSchedule && (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-4 sm:items-center">
+          <div className="w-full max-w-sm rounded-2xl bg-white p-5 shadow-xl">
+            <div className="mb-3 flex items-center justify-between">
+              <h3 className="font-semibold text-slate-900">Save as schedule</h3>
+              <button
+                type="button"
+                onClick={() => { setShowSaveSchedule(false); setScheduleName(""); }}
+                className="flex h-9 w-9 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <p className="mb-3 text-xs text-slate-500">
+              Save today's workout as a reusable template. We'll keep the
+              exercises in order with each one's set count and most-common reps.
+            </p>
+            <form onSubmit={handleSaveSchedule} className="space-y-3">
+              <input
+                type="text"
+                autoFocus
+                value={scheduleName}
+                onChange={(e) => setScheduleName(e.target.value)}
+                placeholder="e.g. Push Day A"
+                className="input text-base"
+              />
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => { setShowSaveSchedule(false); setScheduleName(""); }}
+                  className="btn-secondary flex-1"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={savingSchedule || !scheduleName.trim()}
+                  className="btn-primary flex-1"
+                >
+                  {savingSchedule ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <BookmarkPlus className="h-4 w-4" />
+                  )}
+                  Save
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {scheduleSavedMessage && (
+        <div className="flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
+          <Check className="h-4 w-4" />
+          {scheduleSavedMessage}
+        </div>
+      )}
+
       <div className="card p-4">
-        <div className="mb-3 flex items-center justify-between">
+        <div className="mb-3 flex items-center justify-between gap-2">
           <h3 className="text-sm font-semibold text-slate-700">Log a set</h3>
-          <button
-            type="button"
-            onClick={() => setShowPicker(true)}
-            disabled={loadingSchedule}
-            className="btn-ghost flex items-center gap-1.5 text-xs"
-          >
-            {loadingSchedule ? (
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            ) : (
-              <CalendarDays className="h-3.5 w-3.5" />
-            )}
-            {loadingSchedule ? "Loading…" : "Load schedule"}
-          </button>
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              onClick={() => setShowPicker(true)}
+              disabled={loadingSchedule}
+              className="btn-ghost flex items-center gap-1.5 text-xs"
+            >
+              {loadingSchedule ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <CalendarDays className="h-3.5 w-3.5" />
+              )}
+              <span className="hidden sm:inline">{loadingSchedule ? "Loading…" : "Load schedule"}</span>
+              <span className="sm:hidden">{loadingSchedule ? "…" : "Load"}</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowSaveSchedule(true)}
+              disabled={sets.length === 0}
+              className="btn-ghost flex items-center gap-1.5 text-xs disabled:opacity-40"
+              title={sets.length === 0 ? "Log a set first" : "Save today as schedule"}
+            >
+              <BookmarkPlus className="h-3.5 w-3.5" />
+              <span className="hidden sm:inline">Save as schedule</span>
+              <span className="sm:hidden">Save</span>
+            </button>
+          </div>
         </div>
 
         <div className="space-y-3">
@@ -294,6 +471,48 @@ export default function WorkoutLogger({ dateISO }: Props) {
             onSelect={(ex) => setSelectedId(ex.id)}
             onCreated={(ex) => setExercises((prev) => [...prev, ex])}
           />
+
+          {/* PR Session card */}
+          {selectedId && !hasTodaySetsForSelected && (loadingPR || prSession) && (
+            <div className="rounded-lg border border-amber-200 bg-amber-50 p-3">
+              {loadingPR ? (
+                <p className="flex items-center gap-2 text-sm text-amber-800">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Looking up your PR…
+                </p>
+              ) : prSession ? (
+                <>
+                  <div className="mb-2 flex items-center gap-2">
+                    <Trophy className="h-4 w-4 text-amber-600" />
+                    <span className="text-sm font-semibold text-amber-900">
+                      Your PR — {format(parseISO(prSession.date), "MMM d, yyyy")}
+                    </span>
+                  </div>
+                  <ul className="mb-3 space-y-0.5 text-xs text-amber-900">
+                    {prSession.sets.map((s) => (
+                      <li key={s.set_number} className="tabular-nums">
+                        Set {s.set_number}: <strong>{s.weight_kg} kg</strong> × {s.reps} reps
+                      </li>
+                    ))}
+                  </ul>
+                  <button
+                    type="button"
+                    onClick={handleLoadPR}
+                    disabled={loadingPRSets}
+                    className="flex items-center gap-1.5 rounded-md bg-amber-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-amber-700 disabled:opacity-50"
+                  >
+                    {loadingPRSets ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <Plus className="h-3.5 w-3.5" />
+                    )}
+                    Load PR sets (target to beat)
+                  </button>
+                </>
+              ) : null}
+            </div>
+          )}
+
           <form onSubmit={handleAdd} className="grid grid-cols-[1fr_1fr_auto] gap-2">
             <div>
               <label className="label">Weight (kg)</label>
