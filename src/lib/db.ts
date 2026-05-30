@@ -22,13 +22,18 @@ async function uid(): Promise<string> {
 }
 
 // ---------- daily_logs ----------
+// NOTE: These queries explicitly filter by user_id because the partner_read
+// RLS policy would otherwise leak partner's logs into the result set, and
+// .maybeSingle() throws when both users have a row for the same date.
 export async function fetchDailyLogs(
   fromISO: string,
   toISO: string,
 ): Promise<DailyLog[]> {
+  const user_id = await uid();
   const { data, error } = await supabase
     .from("daily_logs")
     .select("*")
+    .eq("user_id", user_id)
     .gte("date", fromISO)
     .lte("date", toISO)
     .order("date");
@@ -37,18 +42,22 @@ export async function fetchDailyLogs(
 }
 
 export async function fetchAllDailyLogs(): Promise<DailyLog[]> {
+  const user_id = await uid();
   const { data, error } = await supabase
     .from("daily_logs")
     .select("*")
+    .eq("user_id", user_id)
     .order("date");
   if (error) throw error;
   return data as DailyLog[];
 }
 
 export async function fetchDailyLog(dateISO: string): Promise<DailyLog | null> {
+  const user_id = await uid();
   const { data, error } = await supabase
     .from("daily_logs")
     .select("*")
+    .eq("user_id", user_id)
     .eq("date", dateISO)
     .maybeSingle();
   if (error) throw error;
@@ -119,6 +128,8 @@ export async function deleteExercise(id: string): Promise<void> {
 }
 
 // ---------- workout sessions + sets ----------
+// NOTE: Same as daily_logs — explicit user_id filter prevents partner data
+// from leaking via the partner_read RLS policy and crashing .maybeSingle().
 export async function getOrCreateSession(
   dateISO: string,
 ): Promise<WorkoutSession> {
@@ -126,6 +137,7 @@ export async function getOrCreateSession(
   const existing = await supabase
     .from("workout_sessions")
     .select("*")
+    .eq("user_id", user_id)
     .eq("date", dateISO)
     .maybeSingle();
   if (existing.error) throw existing.error;
@@ -142,11 +154,13 @@ export async function getOrCreateSession(
 export async function fetchSetsForDate(
   dateISO: string,
 ): Promise<ExerciseSetWithExercise[]> {
+  const user_id = await uid();
   const { data, error } = await supabase
     .from("exercise_sets")
     .select(
       "*, workout_sessions!inner(date), exercise:exercises(id, name, muscle_group)",
     )
+    .eq("user_id", user_id)
     .eq("workout_sessions.date", dateISO)
     .order("set_number");
   if (error) throw error;
@@ -156,9 +170,11 @@ export async function fetchSetsForDate(
 export async function fetchSetsForExercise(
   exerciseId: string,
 ): Promise<(ExerciseSet & { date: string })[]> {
+  const user_id = await uid();
   const { data, error } = await supabase
     .from("exercise_sets")
     .select("*, workout_sessions!inner(date)")
+    .eq("user_id", user_id)
     .eq("exercise_id", exerciseId)
     .order("created_at");
   if (error) throw error;
@@ -359,9 +375,11 @@ export async function fetchWorkoutDatesInRange(
   fromISO: string,
   toISO: string,
 ): Promise<Set<string>> {
+  const user_id = await uid();
   const { data, error } = await supabase
     .from("workout_sessions")
     .select("date")
+    .eq("user_id", user_id)
     .gte("date", fromISO)
     .lte("date", toISO);
   if (error) throw error;
@@ -376,9 +394,11 @@ export async function fetchCaloriesByDateInRange(
   fromISO: string,
   toISO: string,
 ): Promise<Map<string, number>> {
+  const user_id = await uid();
   const { data, error } = await supabase
     .from("food_logs")
     .select("date, calories")
+    .eq("user_id", user_id)
     .gte("date", fromISO)
     .lte("date", toISO);
   if (error) throw error;
@@ -392,9 +412,11 @@ export async function fetchCaloriesByDateInRange(
 // ---------- Food logs ----------
 
 export async function fetchFoodLogs(dateISO: string): Promise<FoodLog[]> {
+  const user_id = await uid();
   const { data, error } = await supabase
     .from("food_logs")
     .select("*")
+    .eq("user_id", user_id)
     .eq("date", dateISO)
     .order("created_at");
   if (error) throw error;
@@ -405,9 +427,11 @@ export async function fetchFoodLogsInRange(
   fromISO: string,
   toISO: string,
 ): Promise<FoodLog[]> {
+  const user_id = await uid();
   const { data, error } = await supabase
     .from("food_logs")
     .select("*")
+    .eq("user_id", user_id)
     .gte("date", fromISO)
     .lte("date", toISO)
     .order("date");
