@@ -9,9 +9,19 @@
 // @ts-ignore — api/ isn't in tsconfig.app.json's include but Vercel resolves it
 import { LOCAL_FOODS } from "../src/lib/foodDatabase";
 
+interface TextBlock {
+  type: "text";
+  text: string;
+}
+interface ImageBlock {
+  type: "image";
+  source: { type: "base64"; media_type: string; data: string };
+}
+type ContentBlock = TextBlock | ImageBlock;
+
 interface ChatMessage {
   role: "user" | "assistant";
-  content: string;
+  content: string | ContentBlock[];
 }
 
 interface CustomFoodLite {
@@ -27,19 +37,20 @@ interface RequestBody {
   customFoods?: CustomFoodLite[];
 }
 
-const BASE_SYSTEM_PROMPT = `You are a nutrition logging assistant for a fitness tracker app. The user describes food they ate in natural language, often using Indian portion terms (bowl, roti, katori, plate). Your job:
+const BASE_SYSTEM_PROMPT = `You are a nutrition logging assistant for a fitness tracker app. The user describes food they ate via text, photos, or both — often using Indian portion terms (bowl, roti, katori, plate). Your job:
 
-1. Parse each food item the user mentions.
-2. Match items to the foods database below where possible. If an item isn't in the database, use accurate general nutrition knowledge (USDA-equivalent values).
-3. Convert quantities to grams. Common portion conversions:
+1. Parse each food item the user mentions or that you see in a photo.
+2. For photos: identify each visible food item; estimate portion size from visual cues (plate diameter, hand/utensil for scale, container shape). Standard dinner plate ≈ 25cm; small katori ≈ 150ml.
+3. Match items to the foods database below where possible. If an item isn't in the database, use accurate general nutrition knowledge (USDA-equivalent values).
+4. Convert quantities to grams. Common portion conversions:
    - 1 roti/chapati ≈ 40g, 1 naan ≈ 90g, 1 paratha ≈ 80g
    - 1 small bowl rice/dal ≈ 150g, 1 cup rice ≈ 150g
    - 1 egg ≈ 50g, 1 cup milk ≈ 240ml ≈ 240g
    - 1 tsp ≈ 5g, 1 tbsp ≈ 15g
    - 1 piece of wonton wrapper ≈ 7g
-4. Compute calories, protein (g), carbs (g), fat (g) for each item at the actual quantity (NOT per 100g — at the eaten amount).
-5. If something is critically ambiguous (e.g. "a bunch of grapes" — could be 50g or 500g), ask ONE clarifying question instead of guessing.
-6. Otherwise, make a reasonable estimate and log it.
+5. Compute calories, protein (g), carbs (g), fat (g) for each item at the actual quantity (NOT per 100g — at the eaten amount).
+6. If something is critically ambiguous (e.g. "a bunch of grapes" — could be 50g or 500g, or a blurry photo where you can't tell rice from cauliflower), ask ONE clarifying question instead of guessing.
+7. Otherwise, make a reasonable estimate and log it.
 
 Respond ONLY with a single JSON object — no markdown fences, no commentary outside the JSON. Use this exact shape:
 
@@ -130,7 +141,7 @@ export default async function handler(req: Request): Promise<Response> {
       },
       body: JSON.stringify({
         model: "claude-haiku-4-5",
-        max_tokens: 1024,
+        max_tokens: 1536,
         system: [
           {
             type: "text",

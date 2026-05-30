@@ -1,5 +1,13 @@
 import { useEffect, useRef, useState } from "react";
-import { X, Send, Loader2, Check, Sparkles } from "lucide-react";
+import {
+  X,
+  Send,
+  Loader2,
+  Check,
+  Sparkles,
+  Camera,
+  Image as ImageIcon,
+} from "lucide-react";
 import type { CustomFood, FoodLog } from "@/lib/types";
 import { addFoodLog, fetchCustomFoods } from "@/lib/db";
 
@@ -10,9 +18,15 @@ interface Props {
   onClose: () => void;
 }
 
+interface AttachedImage {
+  data: string; // base64, no data: prefix
+  mediaType: string;
+}
+
 interface ChatMessage {
   role: "user" | "assistant";
   content: string;
+  image?: AttachedImage;
 }
 
 interface AIItem {
@@ -46,6 +60,51 @@ const MEAL_KEYS: FoodLog["meal_type"][] = [
   "snack",
 ];
 
+/**
+ * Resize the image to fit within maxDim on the longest side and re-encode as
+ * JPEG. Phone photos are typically 4-8 MB; this brings them down to ~100-300 KB
+ * which keeps API requests fast and well under Claude's 5MB image limit.
+ */
+async function compressImage(
+  file: File,
+  maxDim = 1280,
+  quality = 0.85,
+): Promise<AttachedImage> {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      try {
+        const scale = Math.min(1, maxDim / Math.max(img.width, img.height));
+        const w = Math.max(1, Math.round(img.width * scale));
+        const h = Math.max(1, Math.round(img.height * scale));
+        const canvas = document.createElement("canvas");
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) {
+          URL.revokeObjectURL(url);
+          reject(new Error("Could not create canvas context"));
+          return;
+        }
+        ctx.drawImage(img, 0, 0, w, h);
+        const dataUrl = canvas.toDataURL("image/jpeg", quality);
+        URL.revokeObjectURL(url);
+        const data = dataUrl.split(",")[1];
+        resolve({ data, mediaType: "image/jpeg" });
+      } catch (err) {
+        URL.revokeObjectURL(url);
+        reject(err);
+      }
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(new Error("Failed to read image"));
+    };
+    img.src = url;
+  });
+}
+
 export default function ChatFoodModal({
   initialMealType,
   date,
@@ -55,6 +114,8 @@ export default function ChatFoodModal({
   const [mealType, setMealType] = useState<FoodLog["meal_type"]>(initialMealType);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
+  const [attached, setAttached] = useState<AttachedImage | null>(null);
+  const [processingImage, setProcessingImage] = useState(false);
   const [loading, setLoading] = useState(false);
   const [pendingItems, setPendingItems] = useState<AIItem[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -63,6 +124,8 @@ export default function ChatFoodModal({
 
   const endRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const fileCameraRef = useRef<HTMLInputElement>(null);
+  const fileGalleryRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     inputRef.current?.focus();
@@ -75,13 +138,58 @@ export default function ChatFoodModal({
     endRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, loading, pendingItems]);
 
+  async function handleFileSelected(file: File | undefined) {
+    if (!file) return;
+    setError(null);
+    setProcessingImage(true);
+    try {
+      const img = await compressImage(file);
+      setAttached(img);
+    } catch (e) {
+      setError(`Couldn't read image: ${(e as Error).message}`);
+    } finally {
+      setProcessingImage(false);
+    }
+  }
+
+  function buildApiPayload(history: ChatMessage[]) {
+    return history.map((m) => {
+      if (m.role === "assistant" || !m.image) {
+        return { role: m.role, content: m.content };
+      }
+      return {
+        role: m.role,
+        content: [
+          {
+            type: "image" as const,
+            source: {
+              type: "base64" as const,
+              media_type: m.image.mediaType,
+              data: m.image.data,
+            },
+          },
+          {
+            type: "text" as const,
+            text: m.content || "Identify the food in this photo and log it.",
+          },
+        ],
+      };
+    });
+  }
+
   async function send() {
     const text = input.trim();
-    if (!text || loading) return;
+    if ((!text && !attached) || loading) return;
 
-    const next: ChatMessage[] = [...messages, { role: "user", content: text }];
+    const newMessage: ChatMessage = {
+      role: "user",
+      content: text,
+      image: attached || undefined,
+    };
+    const next = [...messages, newMessage];
     setMessages(next);
     setInput("");
+    setAttached(null);
     setLoading(true);
     setError(null);
     setPendingItems([]);
@@ -91,7 +199,7 @@ export default function ChatFoodModal({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          messages: next,
+          messages: buildApiPayload(next),
           customFoods: customFoods.map((cf) => ({
             name: cf.name,
             calories_per_100g: cf.calories_per_100g,
@@ -165,6 +273,8 @@ export default function ChatFoodModal({
     { cals: 0, p: 0, c: 0, f: 0 },
   );
 
+  const canSend = (!!input.trim() || !!attached) && !loading && !processingImage;
+
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 sm:items-center">
       <div className="flex h-[92vh] w-full max-w-lg flex-col rounded-t-2xl bg-white shadow-xl sm:h-auto sm:max-h-[85vh] sm:rounded-2xl">
@@ -175,7 +285,7 @@ export default function ChatFoodModal({
             <div>
               <h2 className="text-base font-semibold">AI Quick Log</h2>
               <p className="text-xs text-slate-500">
-                Powered by Claude · Adding to{" "}
+                Adding to{" "}
                 <select
                   value={mealType}
                   onChange={(e) =>
@@ -205,7 +315,7 @@ export default function ChatFoodModal({
         <div className="flex-1 space-y-3 overflow-y-auto px-4 py-3">
           {messages.length === 0 && (
             <div className="rounded-xl border border-dashed border-slate-300 p-4 text-center text-sm text-slate-500">
-              <p className="mb-2">👋 Tell me what you ate!</p>
+              <p className="mb-2">👋 Tell me what you ate — or take a photo!</p>
               <p className="text-xs leading-relaxed">
                 Try things like:
                 <br />
@@ -214,11 +324,11 @@ export default function ChatFoodModal({
                 </span>
                 <br />
                 <span className="italic">
-                  "Had a banana, 2 boiled eggs, and chai with milk"
+                  📷 Photo of your plate
                 </span>
                 <br />
                 <span className="italic">
-                  "1 plate chicken biryani"
+                  Photo + "the rice bowl is the small one"
                 </span>
               </p>
             </div>
@@ -232,13 +342,24 @@ export default function ChatFoodModal({
               }`}
             >
               <div
-                className={`max-w-[85%] whitespace-pre-wrap rounded-2xl px-3 py-2 text-sm ${
+                className={`max-w-[85%] overflow-hidden rounded-2xl text-sm ${
                   m.role === "user"
                     ? "bg-brand-600 text-white"
                     : "bg-slate-100 text-slate-800"
                 }`}
               >
-                {m.content}
+                {m.image && (
+                  <img
+                    src={`data:${m.image.mediaType};base64,${m.image.data}`}
+                    alt="Uploaded food"
+                    className="max-h-56 w-full object-cover"
+                  />
+                )}
+                {m.content && (
+                  <div className="whitespace-pre-wrap px-3 py-2">
+                    {m.content}
+                  </div>
+                )}
               </div>
             </div>
           ))}
@@ -333,7 +454,75 @@ export default function ChatFoodModal({
               {MEAL_LABELS[mealType]}
             </button>
           )}
-          <div className="flex gap-2">
+
+          {/* Attached image preview */}
+          {attached && (
+            <div className="relative inline-block">
+              <img
+                src={`data:${attached.mediaType};base64,${attached.data}`}
+                alt="Selected"
+                className="h-20 w-20 rounded-lg border border-slate-200 object-cover"
+              />
+              <button
+                type="button"
+                onClick={() => setAttached(null)}
+                className="absolute -right-1.5 -top-1.5 flex h-6 w-6 items-center justify-center rounded-full bg-slate-800 text-white shadow"
+                aria-label="Remove image"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          )}
+
+          {/* Hidden file inputs */}
+          <input
+            ref={fileCameraRef}
+            type="file"
+            accept="image/*"
+            capture="environment"
+            className="hidden"
+            onChange={(e) => {
+              void handleFileSelected(e.target.files?.[0]);
+              e.target.value = "";
+            }}
+          />
+          <input
+            ref={fileGalleryRef}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={(e) => {
+              void handleFileSelected(e.target.files?.[0]);
+              e.target.value = "";
+            }}
+          />
+
+          {/* Input row */}
+          <div className="flex items-center gap-1.5">
+            <button
+              type="button"
+              onClick={() => fileCameraRef.current?.click()}
+              disabled={processingImage || loading}
+              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 active:bg-slate-200 disabled:opacity-50"
+              aria-label="Take photo"
+              title="Take photo"
+            >
+              {processingImage ? (
+                <Loader2 className="h-5 w-5 animate-spin" />
+              ) : (
+                <Camera className="h-5 w-5" />
+              )}
+            </button>
+            <button
+              type="button"
+              onClick={() => fileGalleryRef.current?.click()}
+              disabled={processingImage || loading}
+              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 active:bg-slate-200 disabled:opacity-50"
+              aria-label="Choose from gallery"
+              title="Choose from gallery"
+            >
+              <ImageIcon className="h-5 w-5" />
+            </button>
             <input
               ref={inputRef}
               type="text"
@@ -345,7 +534,9 @@ export default function ChatFoodModal({
                   send();
                 }
               }}
-              placeholder="What did you eat?"
+              placeholder={
+                attached ? "Add notes (optional)…" : "What did you eat?"
+              }
               disabled={loading}
               className="input flex-1 text-base"
               autoCorrect="off"
@@ -353,7 +544,7 @@ export default function ChatFoodModal({
             <button
               type="button"
               onClick={send}
-              disabled={loading || !input.trim()}
+              disabled={!canSend}
               className="btn-primary px-4"
               aria-label="Send"
             >
