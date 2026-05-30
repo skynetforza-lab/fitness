@@ -164,7 +164,11 @@ export async function fetchSetsForDate(
     .eq("workout_sessions.date", dateISO)
     .order("set_number");
   if (error) throw error;
-  return (data ?? []) as unknown as ExerciseSetWithExercise[];
+  // Filter out rows whose exercise relation is null (RLS dropped it).
+  // This prevents downstream UI from crashing on `.exercise.name` access.
+  return ((data ?? []) as unknown as ExerciseSetWithExercise[]).filter(
+    (s) => s.exercise != null,
+  );
 }
 
 export async function fetchSetsForExercise(
@@ -270,7 +274,10 @@ export async function fetchScheduleExercises(
     .eq("schedule_id", scheduleId)
     .order("position");
   if (error) throw error;
-  return data as unknown as ScheduleExercise[];
+  // Filter out rows where the joined exercise is null (RLS dropped it)
+  return ((data ?? []) as unknown as ScheduleExercise[]).filter(
+    (r) => r.exercise != null,
+  );
 }
 
 export async function addScheduleExercise(
@@ -644,7 +651,9 @@ export async function fetchExercisePRsForUser(
     .eq("user_id", userId);
   if (error) throw error;
 
-  type Row = ExerciseSet & { exercise: Pick<Exercise, "name" | "muscle_group"> };
+  type Row = ExerciseSet & {
+    exercise: Pick<Exercise, "name" | "muscle_group"> | null;
+  };
   const rows = data as unknown as Row[];
 
   const map = new Map<
@@ -652,6 +661,9 @@ export async function fetchExercisePRsForUser(
     { name: string; muscle_group: string; max_weight: number; max_reps: number }
   >();
   for (const r of rows) {
+    // Skip rows where the joined exercise isn't readable (e.g. partner's
+    // custom exercise that the requesting user no longer has access to).
+    if (!r.exercise) continue;
     const existing = map.get(r.exercise_id);
     if (!existing) {
       map.set(r.exercise_id, {
