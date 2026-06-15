@@ -216,12 +216,15 @@ export default function ChatFoodModal({
       }
 
       const data = (await res.json()) as AIResponse;
+      // Defensive: Claude sometimes returns `items: null` or omits the field
+      // on conversational replies that don't add new food.
+      const safeItems = Array.isArray(data.items) ? data.items : [];
       setMessages([
         ...next,
         { role: "assistant", content: data.message || "(no response)" },
       ]);
-      if (!data.needs_clarification && data.items.length > 0) {
-        setPendingItems(data.items);
+      if (!data.needs_clarification && safeItems.length > 0) {
+        setPendingItems(safeItems);
       }
     } catch (e) {
       const msg = (e as Error).message;
@@ -256,9 +259,21 @@ export default function ChatFoodModal({
         });
       }
       onAdded();
-      onClose();
+      // Continuous-chat mode: keep the modal open, show a confirmation
+      // in the chat thread, and clear pending items so the user can keep
+      // logging more food without reopening.
+      const count = pendingItems.length;
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: "assistant",
+          content: `✓ Logged ${count} item${count > 1 ? "s" : ""} to ${MEAL_LABELS[mealType]}. Anything else?`,
+        },
+      ]);
+      setPendingItems([]);
     } catch (e) {
       setError(`Failed to log: ${(e as Error).message}`);
+    } finally {
       setLogging(false);
     }
   }
