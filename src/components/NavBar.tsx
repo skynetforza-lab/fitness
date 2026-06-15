@@ -1,5 +1,5 @@
 import { NavLink, useNavigate } from "react-router-dom";
-import { Calendar, Dumbbell, BarChart3, ListChecks, LogOut, Users, Utensils } from "lucide-react";
+import { Calendar, Dumbbell, BarChart3, Lightbulb, ListChecks, LogOut, Users, Utensils } from "lucide-react";
 import { format } from "date-fns";
 import { supabase } from "@/lib/supabase";
 import { cn } from "@/lib/cn";
@@ -12,6 +12,7 @@ export default function NavBar() {
     { to: "/", label: "Calendar", icon: Calendar, end: true },
     { to: "/exercises", label: "Exercises", icon: ListChecks },
     { to: `/nutrition/${todayISO}`, label: "Nutrition", icon: Utensils, end: false },
+    { to: "/insights", label: "Insights", icon: Lightbulb },
     { to: "/stats", label: "Stats", icon: BarChart3 },
     { to: "/compare", label: "Compare", icon: Users },
   ];
