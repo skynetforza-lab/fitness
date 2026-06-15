@@ -19,7 +19,6 @@ import {
   fetchExercises,
   fetchSchedules,
   fetchScheduleExercises,
-  fetchLastWorkoutSets,
   fetchSetsForDate,
   fetchSetsForExercise,
   getOrCreateSession,
@@ -329,13 +328,30 @@ export default function WorkoutLogger({ dateISO }: Props) {
       const scheduleExercises = await fetchScheduleExercises(schedule.id);
 
       for (const item of scheduleExercises) {
-        const lastSets = await fetchLastWorkoutSets(item.exercise_id);
+        // Pre-fill with the PR session's sets — the heaviest weights/reps the
+        // user has ever logged for this exercise — so each set is something
+        // to match or beat.
+        const pr = await fetchExercisePRSession(item.exercise_id);
+        const prSets = pr?.sets ?? [];
+        // Fallback for slots beyond what the PR session had: use the heaviest
+        // single set from the PR session (max weight, ties → most reps).
+        const fallback =
+          prSets.length > 0
+            ? prSets.reduce(
+                (best, s) =>
+                  s.weight_kg > best.weight_kg ||
+                  (s.weight_kg === best.weight_kg && s.reps > best.reps)
+                    ? s
+                    : best,
+                prSets[0],
+              )
+            : null;
         const ex = exercises.find((e) => e.id === item.exercise_id);
 
         for (let i = 0; i < item.set_count; i++) {
-          const prev = lastSets[i];
-          const w = prev?.weight_kg ?? 0;
-          const r = prev?.reps ?? item.default_reps;
+          const src = prSets[i] ?? fallback;
+          const w = src?.weight_kg ?? 0;
+          const r = src?.reps ?? item.default_reps;
           const created = await addSet({
             sessionId,
             exerciseId: item.exercise_id,
