@@ -42,58 +42,85 @@ export default function BarcodeScanner({ onDetected, onClose }: Props) {
     });
     scannerRef.current = scanner;
 
-    scanner
-      .start(
-        { facingMode: "environment" },
-        {
-          fps: 15,
-          // Larger scan area improves detection for various barcode sizes
-          qrbox: (vw, vh) => {
-            const minDim = Math.min(vw, vh);
-            return {
-              width: Math.floor(minDim * 0.85),
-              height: Math.floor(minDim * 0.5),
-            };
-          },
-          aspectRatio: window.innerWidth / window.innerHeight,
-        },
-        (decoded) => {
-          if (detectedRef.current) return;
-          detectedRef.current = true;
-          // Briefly show success before closing camera, so the user
-          // sees the barcode value was captured.
-          if (mounted) setDetectedCode(decoded);
-          setTimeout(() => {
-            scanner
-              .stop()
-              .catch(() => {})
-              .finally(() => {
-                if (mounted) onDetected(decoded);
-              });
-          }, 350);
-        },
-        () => {
-          // ignore per-frame "not found" errors
-        },
-      )
-      .then(() => {
-        if (mounted) setStarting(false);
-      })
-      .catch((err: unknown) => {
-        if (!mounted) return;
-        setStarting(false);
-        const msg = err instanceof Error ? err.message : String(err);
-        const lower = msg.toLowerCase();
-        if (lower.includes("permission") || lower.includes("denied")) {
-          setError(
-            "Camera permission denied. On iPhone: Settings → Safari → Camera → Allow.",
+    // iPhones with multiple rear lenses often have facingMode:"environment"
+    // resolve to the ultra-wide lens, which can't focus closely enough to
+    // resolve a food barcode's bar widths (QR still works since it tolerates
+    // blur via error correction). Prefer the plain "Back Camera" by label.
+    async function pickCameraId(): Promise<string | MediaTrackConstraints> {
+      try {
+        const cameras = await Html5Qrcode.getCameras();
+        const back =
+          cameras.find((c) => /back camera$/i.test(c.label.trim())) ??
+          cameras.find(
+            (c) =>
+              /back/i.test(c.label) &&
+              !/ultra|wide angle|triple|dual|tele/i.test(c.label),
           );
-        } else if (lower.includes("notfound") || lower.includes("no camera")) {
-          setError("No camera found on this device.");
-        } else {
-          setError(`Could not start camera. ${msg}`);
-        }
-      });
+        if (back) return back.id;
+      } catch {
+        // getCameras() can fail before permission is granted; fall back below.
+      }
+      return { facingMode: "environment" };
+    }
+
+    pickCameraId().then((cameraIdOrConfig) => {
+      if (!mounted) return;
+      scanner
+        .start(
+          cameraIdOrConfig,
+          {
+            fps: 15,
+            // Larger scan area improves detection for various barcode sizes
+            qrbox: (vw, vh) => {
+              const minDim = Math.min(vw, vh);
+              return {
+                width: Math.floor(minDim * 0.85),
+                height: Math.floor(minDim * 0.5),
+              };
+            },
+            aspectRatio: window.innerWidth / window.innerHeight,
+          },
+          (decoded) => {
+            if (detectedRef.current) return;
+            detectedRef.current = true;
+            // Briefly show success before closing camera, so the user
+            // sees the barcode value was captured.
+            if (mounted) setDetectedCode(decoded);
+            setTimeout(() => {
+              scanner
+                .stop()
+                .catch(() => {})
+                .finally(() => {
+                  if (mounted) onDetected(decoded);
+                });
+            }, 350);
+          },
+          () => {
+            // ignore per-frame "not found" errors
+          },
+        )
+        .then(() => {
+          if (mounted) setStarting(false);
+        })
+        .catch((err: unknown) => {
+          if (!mounted) return;
+          setStarting(false);
+          const msg = err instanceof Error ? err.message : String(err);
+          const lower = msg.toLowerCase();
+          if (lower.includes("permission") || lower.includes("denied")) {
+            setError(
+              "Camera permission denied. On iPhone: Settings → Safari → Camera → Allow.",
+            );
+          } else if (
+            lower.includes("notfound") ||
+            lower.includes("no camera")
+          ) {
+            setError("No camera found on this device.");
+          } else {
+            setError(`Could not start camera. ${msg}`);
+          }
+        });
+    });
 
     return () => {
       mounted = false;
