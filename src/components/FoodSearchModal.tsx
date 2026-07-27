@@ -511,13 +511,18 @@ export default function FoodSearchModal({
         <CustomFoodModal
           onClose={() => setShowCustom(false)}
           onSaved={(food) => {
+            const result = customFoodToResult(food);
             setCustomFoods((prev) => [food, ...prev]);
             setShowCustom(false);
-            // Auto-select the just-created food
-            setSelected(customFoodToResult(food));
+            setSelected(result);
             setSelectedSource("mine");
-            setQty(100);
-            setActiveServing(null);
+            if (result.servings && result.servings.length > 0) {
+              setActiveServing(result.servings[0]);
+              setQty(result.servings[0].grams);
+            } else {
+              setActiveServing(null);
+              setQty(100);
+            }
           }}
         />
       )}
@@ -529,13 +534,21 @@ export default function FoodSearchModal({
 // Helpers
 // ============================================================
 function customFoodToResult(cf: CustomFood): FoodSearchResult {
-  return {
+  const result: FoodSearchResult = {
     product_name: cf.name,
     calories_per_100g: cf.calories_per_100g,
     protein_per_100g: cf.protein_per_100g,
     carbs_per_100g: cf.carbs_per_100g,
     fat_per_100g: cf.fat_per_100g,
   };
+  if (cf.is_recipe && cf.total_grams && cf.total_grams > 0) {
+    result.servings = [
+      { label: "1 whole recipe", grams: cf.total_grams },
+      { label: "½ recipe", grams: Math.round(cf.total_grams / 2) },
+      { label: "¼ recipe", grams: Math.round(cf.total_grams / 4) },
+    ];
+  }
+  return result;
 }
 
 function SourceBadge({ source }: { source: Source }) {
