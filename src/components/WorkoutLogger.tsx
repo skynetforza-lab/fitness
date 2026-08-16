@@ -35,6 +35,7 @@ import type {
   WorkoutSchedule,
 } from "@/lib/types";
 import { computePRs } from "@/lib/pr";
+import { decideRest } from "@/lib/rest";
 import { cn } from "@/lib/cn";
 
 interface Props {
@@ -120,6 +121,15 @@ export default function WorkoutLogger({ dateISO }: Props) {
     label: string;
     runKey: number;
   } | null>(null);
+  const [timerMinimized, setTimerMinimized] = useState(false);
+  // Transient "no rest, go straight on" note shown between superset exercises.
+  const [cue, setCue] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!cue) return;
+    const id = setTimeout(() => setCue(null), 3000);
+    return () => clearTimeout(id);
+  }, [cue]);
 
   // PR session for the currently selected exercise
   const [prSession, setPrSession] = useState<PRSession | null>(null);
@@ -340,8 +350,10 @@ export default function WorkoutLogger({ dateISO }: Props) {
     }
   }
 
-  const REST_BETWEEN_SETS = 30;
-  const REST_BETWEEN_EXERCISES = 60;
+  function startTimer(seconds: number, label: string) {
+    setTimerMinimized(false);
+    setTimer((t) => ({ seconds, label, runKey: (t?.runKey ?? 0) + 1 }));
+  }
 
   async function handleToggleDone(set: ExerciseSetWithExercise) {
     const nowDone = !set.is_done;
@@ -351,17 +363,13 @@ export default function WorkoutLogger({ dateISO }: Props) {
     );
 
     if (nowDone) {
-      // Every other set of this exercise finished → longer rest before moving
-      // on. Otherwise it's a normal between-sets break.
-      const remaining = sets.filter(
-        (s) => s.exercise_id === set.exercise_id && s.id !== set.id && !s.is_done,
-      ).length;
-      const exerciseComplete = remaining === 0;
-      setTimer((t) => ({
-        seconds: exerciseComplete ? REST_BETWEEN_EXERCISES : REST_BETWEEN_SETS,
-        label: exerciseComplete ? "Next exercise" : "Rest",
-        runKey: (t?.runKey ?? 0) + 1,
-      }));
+      // Reason about the workout as it stands *after* this tick.
+      const after = sets.map((s) =>
+        s.id === set.id ? { ...s, is_done: true } : s,
+      );
+      const decision = decideRest(after, set);
+      if (decision.kind === "cue") setCue(decision.text);
+      else startTimer(decision.seconds, decision.label);
     }
 
     try {
@@ -495,8 +503,21 @@ export default function WorkoutLogger({ dateISO }: Props) {
           seconds={timer.seconds}
           label={timer.label}
           runKey={timer.runKey}
-          onDismiss={() => setTimer(null)}
+          minimized={timerMinimized}
+          onMinimize={() => setTimerMinimized(true)}
+          onExpand={() => setTimerMinimized(false)}
+          onDismiss={() => {
+            setTimer(null);
+            setTimerMinimized(false);
+          }}
         />
+      )}
+
+      {cue && (
+        <div className="sticky top-2 z-40 flex items-center gap-2 rounded-lg border border-purple-200 bg-purple-50 px-3 py-2 text-sm font-medium text-purple-700 shadow-sm">
+          <Layers className="h-4 w-4 shrink-0" />
+          {cue}
+        </div>
       )}
 
       {showPicker && (
