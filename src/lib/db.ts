@@ -224,11 +224,12 @@ export async function deleteSet(id: string): Promise<void> {
 
 export async function updateSet(
   id: string,
-  patch: { weightKg?: number; reps?: number },
+  patch: { weightKg?: number; reps?: number; isDone?: boolean },
 ): Promise<ExerciseSet> {
-  const update: Record<string, number> = {};
+  const update: Record<string, number | boolean> = {};
   if (patch.weightKg !== undefined) update.weight_kg = patch.weightKg;
   if (patch.reps !== undefined) update.reps = patch.reps;
+  if (patch.isDone !== undefined) update.is_done = patch.isDone;
   const { data, error } = await supabase
     .from("exercise_sets")
     .update(update)

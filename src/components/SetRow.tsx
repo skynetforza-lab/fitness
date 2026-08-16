@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Loader2, Trash2, TrendingDown, Trophy } from "lucide-react";
+import { Check, Loader2, Trash2, TrendingDown, Trophy } from "lucide-react";
 import { cn } from "@/lib/cn";
 import type { ExerciseSet } from "@/lib/types";
 
@@ -8,9 +8,16 @@ interface Props {
   isPR: boolean;
   onDelete: () => void;
   onUpdate: (patch: { weightKg?: number; reps?: number }) => Promise<void>;
+  onToggleDone: () => void;
 }
 
-export default function SetRow({ set, isPR, onDelete, onUpdate }: Props) {
+export default function SetRow({
+  set,
+  isPR,
+  onDelete,
+  onUpdate,
+  onToggleDone,
+}: Props) {
   const [weight, setWeight] = useState(String(set.weight_kg));
   const [reps, setReps] = useState(String(set.reps));
   const [saving, setSaving] = useState(false);
@@ -58,12 +65,30 @@ export default function SetRow({ set, isPR, onDelete, onUpdate }: Props) {
   return (
     <div
       className={cn(
-        "flex items-center gap-2 rounded-lg border px-3 py-2 text-sm",
-        set.is_drop_set
-          ? "border-orange-200 bg-orange-50/60"
-          : "border-slate-200 bg-white",
+        "flex items-center gap-2 rounded-lg border px-3 py-2 text-sm transition",
+        set.is_done
+          ? "border-emerald-200 bg-emerald-50/60"
+          : set.is_drop_set
+            ? "border-orange-200 bg-orange-50/60"
+            : "border-slate-200 bg-white",
       )}
     >
+      {/* Done tick — starts the rest timer */}
+      <button
+        type="button"
+        onClick={onToggleDone}
+        aria-label={set.is_done ? "Mark set not done" : "Mark set done"}
+        aria-pressed={set.is_done}
+        className={cn(
+          "flex h-6 w-6 shrink-0 items-center justify-center rounded-md border transition",
+          set.is_done
+            ? "border-emerald-500 bg-emerald-500 text-white"
+            : "border-slate-300 bg-white text-transparent hover:border-emerald-400 hover:text-emerald-300",
+        )}
+      >
+        <Check className="h-3.5 w-3.5" strokeWidth={3} />
+      </button>
+
       <span className="w-7 shrink-0 text-slate-500">
         {set.is_drop_set ? (
           <TrendingDown className="h-3.5 w-3.5 text-orange-500" />

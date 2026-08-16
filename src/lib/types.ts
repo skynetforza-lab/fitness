@@ -48,6 +48,8 @@ export interface ExerciseSet {
   superset_group: string | null;
   // A reduced-weight set performed straight after the working sets.
   is_drop_set: boolean;
+  // Ticked off during the workout; starts the rest timer.
+  is_done: boolean;
   created_at: string;
 }
 

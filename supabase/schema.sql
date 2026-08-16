@@ -330,3 +330,9 @@ alter table public.schedule_exercises
 alter table public.exercise_sets
   add column if not exists superset_group text,
   add column if not exists is_drop_set boolean not null default false;
+
+-- Per-set completion tick. Drives the rest timer (30s between sets, 60s once
+-- every set of an exercise is ticked) and is persisted so refreshing the page
+-- mid-workout doesn't lose your place.
+alter table public.exercise_sets
+  add column if not exists is_done boolean not null default false;

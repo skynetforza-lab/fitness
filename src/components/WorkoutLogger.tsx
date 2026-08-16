@@ -13,6 +13,7 @@ import {
 import { format, parseISO } from "date-fns";
 import ExerciseCombobox from "./ExerciseCombobox";
 import SetRow from "./SetRow";
+import RestTimer from "./RestTimer";
 import {
   addSet,
   createScheduleFromDate,
@@ -111,6 +112,14 @@ export default function WorkoutLogger({ dateISO }: Props) {
   const [showPicker, setShowPicker] = useState(false);
   const [prSetIds, setPrSetIds] = useState<Set<string>>(new Set());
   const [error, setError] = useState<string | null>(null);
+
+  // Rest timer. runKey is bumped on every tick so the countdown restarts even
+  // when the duration is unchanged.
+  const [timer, setTimer] = useState<{
+    seconds: number;
+    label: string;
+    runKey: number;
+  } | null>(null);
 
   // PR session for the currently selected exercise
   const [prSession, setPrSession] = useState<PRSession | null>(null);
@@ -331,6 +340,41 @@ export default function WorkoutLogger({ dateISO }: Props) {
     }
   }
 
+  const REST_BETWEEN_SETS = 30;
+  const REST_BETWEEN_EXERCISES = 60;
+
+  async function handleToggleDone(set: ExerciseSetWithExercise) {
+    const nowDone = !set.is_done;
+    // Update locally first so the tick responds immediately.
+    setSets((prev) =>
+      prev.map((s) => (s.id === set.id ? { ...s, is_done: nowDone } : s)),
+    );
+
+    if (nowDone) {
+      // Every other set of this exercise finished → longer rest before moving
+      // on. Otherwise it's a normal between-sets break.
+      const remaining = sets.filter(
+        (s) => s.exercise_id === set.exercise_id && s.id !== set.id && !s.is_done,
+      ).length;
+      const exerciseComplete = remaining === 0;
+      setTimer((t) => ({
+        seconds: exerciseComplete ? REST_BETWEEN_EXERCISES : REST_BETWEEN_SETS,
+        label: exerciseComplete ? "Next exercise" : "Rest",
+        runKey: (t?.runKey ?? 0) + 1,
+      }));
+    }
+
+    try {
+      await updateSet(set.id, { isDone: nowDone });
+    } catch (e) {
+      // Roll back the tick if it didn't persist.
+      setSets((prev) =>
+        prev.map((s) => (s.id === set.id ? { ...s, is_done: !nowDone } : s)),
+      );
+      setError((e as Error).message);
+    }
+  }
+
   async function handleDelete(id: string) {
     await deleteSet(id);
     setSets((prev) => prev.filter((s) => s.id !== id));
@@ -446,6 +490,15 @@ export default function WorkoutLogger({ dateISO }: Props) {
 
   return (
     <div className="space-y-4">
+      {timer && (
+        <RestTimer
+          seconds={timer.seconds}
+          label={timer.label}
+          runKey={timer.runKey}
+          onDismiss={() => setTimer(null)}
+        />
+      )}
+
       {showPicker && (
         <SchedulePickerModal
           onPick={handleLoadSchedule}
@@ -674,6 +727,7 @@ export default function WorkoutLogger({ dateISO }: Props) {
                         isPR={prSetIds.has(s.id)}
                         onDelete={() => handleDelete(s.id)}
                         onUpdate={(patch) => handleUpdate(s.id, patch)}
+                        onToggleDone={() => void handleToggleDone(s)}
                       />
                     ))}
                 </div>
