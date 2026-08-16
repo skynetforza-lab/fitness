@@ -90,6 +90,15 @@ export default function RestTimer({ seconds, label, runKey, onDismiss }: Props) 
   const secs = left % 60;
   const fraction = total > 0 ? left / total : 0;
 
+  // Escape closes the timer, same as tapping the backdrop.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") dismissRef.current();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
   function addTime(extra: number) {
     setTotal((t) => t + extra);
     setEndAt((e) => Math.max(e, Date.now()) + extra * 1000);
@@ -102,6 +111,12 @@ export default function RestTimer({ seconds, label, runKey, onDismiss }: Props) 
       role="dialog"
       aria-modal="true"
       aria-label={`${label} timer`}
+      // Tap the backdrop to get back to the log mid-rest. The check keeps
+      // clicks inside the card (and drags that end on the backdrop) from
+      // closing it.
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onDismiss();
+      }}
     >
       <div className="w-full max-w-xs rounded-2xl bg-white p-6 text-center shadow-xl">
         <p className="mb-4 text-xs font-semibold uppercase tracking-wide text-brand-600">
@@ -154,6 +169,10 @@ export default function RestTimer({ seconds, label, runKey, onDismiss }: Props) 
             Cancel
           </button>
         </div>
+
+        <p className="mt-3 text-[11px] text-slate-400">
+          Tap outside to get back to your sets
+        </p>
       </div>
     </div>
   );
