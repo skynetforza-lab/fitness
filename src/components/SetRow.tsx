@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { Loader2, Trash2, Trophy } from "lucide-react";
+import { Loader2, Trash2, TrendingDown, Trophy } from "lucide-react";
+import { cn } from "@/lib/cn";
 import type { ExerciseSet } from "@/lib/types";
 
 interface Props {
@@ -55,8 +56,21 @@ export default function SetRow({ set, isPR, onDelete, onUpdate }: Props) {
   }
 
   return (
-    <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm">
-      <span className="w-7 shrink-0 text-slate-500">#{set.set_number}</span>
+    <div
+      className={cn(
+        "flex items-center gap-2 rounded-lg border px-3 py-2 text-sm",
+        set.is_drop_set
+          ? "border-orange-200 bg-orange-50/60"
+          : "border-slate-200 bg-white",
+      )}
+    >
+      <span className="w-7 shrink-0 text-slate-500">
+        {set.is_drop_set ? (
+          <TrendingDown className="h-3.5 w-3.5 text-orange-500" />
+        ) : (
+          `#${set.set_number}`
+        )}
+      </span>
 
       {/* Weight input */}
       <input
@@ -94,6 +108,11 @@ export default function SetRow({ set, isPR, onDelete, onUpdate }: Props) {
 
       {/* Saving / saved indicator */}
       <div className="ml-auto flex items-center gap-2">
+        {set.is_drop_set && (
+          <span className="rounded-full bg-orange-100 px-2 py-0.5 text-xs font-semibold text-orange-700">
+            Drop
+          </span>
+        )}
         {saving && <Loader2 className="h-3.5 w-3.5 animate-spin text-slate-400" />}
         {savedTick && !saving && (
           <span className="text-xs text-emerald-600">✓ Saved</span>

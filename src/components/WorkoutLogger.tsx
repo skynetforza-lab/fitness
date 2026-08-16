@@ -3,8 +3,10 @@ import {
   BookmarkPlus,
   CalendarDays,
   Check,
+  Layers,
   Loader2,
   Plus,
+  TrendingDown,
   Trophy,
   X,
 } from "lucide-react";
@@ -32,6 +34,7 @@ import type {
   WorkoutSchedule,
 } from "@/lib/types";
 import { computePRs } from "@/lib/pr";
+import { cn } from "@/lib/cn";
 
 interface Props {
   dateISO: string;
@@ -102,6 +105,7 @@ export default function WorkoutLogger({ dateISO }: Props) {
   const [sets, setSets] = useState<ExerciseSetWithExercise[]>([]);
   const [weight, setWeight] = useState("");
   const [reps, setReps] = useState("");
+  const [addAsDropSet, setAddAsDropSet] = useState(false);
   const [busy, setBusy] = useState(false);
   const [loadingSchedule, setLoadingSchedule] = useState(false);
   const [showPicker, setShowPicker] = useState(false);
@@ -150,6 +154,31 @@ export default function WorkoutLogger({ dateISO }: Props) {
     }
     return Array.from(byExercise.entries());
   }, [sets]);
+
+  // Collect exercises sharing a superset label into one block, keeping the
+  // order each first appears in. Unlabelled exercises stay standalone.
+  const blocks = useMemo(() => {
+    type Entry = (typeof grouped)[number];
+    type Block = { label: string | null; entries: Entry[] };
+    const out: Block[] = [];
+    const byLabel = new Map<string, Block>();
+    for (const entry of grouped) {
+      const label = entry[1].find((s) => s.superset_group)?.superset_group ?? null;
+      if (!label) {
+        out.push({ label: null, entries: [entry] });
+        continue;
+      }
+      const existing = byLabel.get(label);
+      if (existing) {
+        existing.entries.push(entry);
+      } else {
+        const block: Block = { label, entries: [entry] };
+        byLabel.set(label, block);
+        out.push(block);
+      }
+    }
+    return out;
+  }, [grouped]);
 
   const nextSetNumber = useMemo(() => {
     if (!selectedId) return 1;
@@ -263,12 +292,19 @@ export default function WorkoutLogger({ dateISO }: Props) {
     setBusy(true);
     setError(null);
     try {
+      // Inherit the superset label from the sets already logged for this
+      // exercise today, so a manually added set stays in its group.
+      const existingGroup =
+        sets.find((s) => s.exercise_id === selectedId && s.superset_group)
+          ?.superset_group ?? null;
       const created = await addSet({
         sessionId,
         exerciseId: selectedId,
         setNumber: nextSetNumber,
         weightKg: w,
         reps: r,
+        supersetGroup: existingGroup,
+        isDropSet: addAsDropSet,
       });
       const ex = exercises.find((e) => e.id === selectedId);
       if (ex) {
@@ -282,7 +318,10 @@ export default function WorkoutLogger({ dateISO }: Props) {
       }
       setWeight("");
       setReps("");
-      void checkPR(selectedId, created.id);
+      setAddAsDropSet(false);
+      // A drop set is deliberately lighter, so its high rep count would
+      // otherwise trip the reps-based PR check.
+      if (!addAsDropSet) void checkPR(selectedId, created.id);
       // Auto-tick the "workout" habit for this day. Fire-and-forget.
       void markWorkoutDone(dateISO);
     } catch (e) {
@@ -314,9 +353,10 @@ export default function WorkoutLogger({ dateISO }: Props) {
           : s,
       ),
     );
-    // Re-check PR after edit
-    const exerciseId = sets.find((s) => s.id === id)?.exercise_id;
-    if (exerciseId) void checkPR(exerciseId, id);
+    // Re-check PR after edit, but never for a drop set — typing in its
+    // (lighter) weight by hand shouldn't be able to flash a PR badge.
+    const edited = sets.find((s) => s.id === id);
+    if (edited && !edited.is_drop_set) void checkPR(edited.exercise_id, id);
   }
 
   async function handleLoadSchedule(schedule: WorkoutSchedule) {
@@ -358,6 +398,31 @@ export default function WorkoutLogger({ dateISO }: Props) {
             setNumber: i + 1,
             weightKg: w,
             reps: r,
+            supersetGroup: item.superset_group,
+          });
+          if (ex) {
+            setSets((prev) => [
+              ...prev,
+              {
+                ...created,
+                exercise: { id: ex.id, name: ex.name, muscle_group: ex.muscle_group },
+              } as ExerciseSetWithExercise,
+            ]);
+          }
+        }
+
+        // Append the drop set after the working sets. Weight is left at 0 for
+        // the user to type in — how far to drop is a judgement call made in
+        // the moment, so we don't guess a percentage.
+        if (item.is_drop_set) {
+          const created = await addSet({
+            sessionId,
+            exerciseId: item.exercise_id,
+            setNumber: item.set_count + 1,
+            weightKg: 0,
+            reps: item.default_reps,
+            supersetGroup: item.superset_group,
+            isDropSet: true,
           });
           if (ex) {
             setSets((prev) => [
@@ -561,9 +626,25 @@ export default function WorkoutLogger({ dateISO }: Props) {
               disabled={busy || !selectedId}
               className="btn-primary self-end"
             >
-              <Plus className="h-4 w-4" /> Add set #{nextSetNumber}
+              <Plus className="h-4 w-4" />{" "}
+              {addAsDropSet ? "Add drop set" : `Add set #${nextSetNumber}`}
             </button>
           </form>
+
+          <button
+            type="button"
+            onClick={() => setAddAsDropSet((v) => !v)}
+            className={cn(
+              "flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium transition",
+              addAsDropSet
+                ? "bg-orange-100 text-orange-700"
+                : "bg-slate-100 text-slate-500 hover:bg-slate-200",
+            )}
+          >
+            <TrendingDown className="h-3.5 w-3.5" />
+            {addAsDropSet ? "Logging as drop set" : "Log as drop set"}
+          </button>
+
           {error && <p className="text-sm text-rose-600">{error}</p>}
         </div>
       </div>
@@ -574,27 +655,52 @@ export default function WorkoutLogger({ dateISO }: Props) {
           schedule to auto-fill your usual weights.
         </div>
       ) : (
-        grouped.map(([exerciseId, list]) => {
-          const ex = list[0].exercise;
+        blocks.map((block, bi) => {
+          const body = block.entries.map(([exerciseId, list]) => {
+            const ex = list[0].exercise;
+            return (
+              <div key={exerciseId}>
+                <div className="mb-2 flex items-baseline justify-between">
+                  <h4 className="font-semibold">{ex.name}</h4>
+                  <span className="text-xs text-slate-500">{ex.muscle_group}</span>
+                </div>
+                <div className="space-y-2">
+                  {[...list]
+                    .sort((a, b) => a.set_number - b.set_number)
+                    .map((s) => (
+                      <SetRow
+                        key={s.id}
+                        set={s}
+                        isPR={prSetIds.has(s.id)}
+                        onDelete={() => handleDelete(s.id)}
+                        onUpdate={(patch) => handleUpdate(s.id, patch)}
+                      />
+                    ))}
+                </div>
+              </div>
+            );
+          });
+
+          if (!block.label) {
+            return (
+              <div key={block.entries[0][0]} className="card p-4">
+                {body}
+              </div>
+            );
+          }
           return (
-            <div key={exerciseId} className="card p-4">
-              <div className="mb-2 flex items-baseline justify-between">
-                <h4 className="font-semibold">{ex.name}</h4>
-                <span className="text-xs text-slate-500">{ex.muscle_group}</span>
+            <div
+              key={`ss-${block.label}-${bi}`}
+              className="card border-purple-200 p-4"
+            >
+              <div className="mb-3 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-purple-600">
+                <Layers className="h-3.5 w-3.5" />
+                Superset {block.label}
+                <span className="ml-1 font-normal normal-case tracking-normal text-slate-400">
+                  — back-to-back, no rest between
+                </span>
               </div>
-              <div className="space-y-2">
-                {list
-                  .sort((a, b) => a.set_number - b.set_number)
-                  .map((s) => (
-                    <SetRow
-                      key={s.id}
-                      set={s}
-                      isPR={prSetIds.has(s.id)}
-                      onDelete={() => handleDelete(s.id)}
-                      onUpdate={(patch) => handleUpdate(s.id, patch)}
-                    />
-                  ))}
-              </div>
+              <div className="space-y-4">{body}</div>
             </div>
           );
         })

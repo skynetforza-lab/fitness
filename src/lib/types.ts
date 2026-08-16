@@ -43,6 +43,11 @@ export interface ExerciseSet {
   set_number: number;
   weight_kg: number;
   reps: number;
+  // Superset label copied from the schedule when loaded; groups exercises
+  // performed back-to-back.
+  superset_group: string | null;
+  // A reduced-weight set performed straight after the working sets.
+  is_drop_set: boolean;
   created_at: string;
 }
 

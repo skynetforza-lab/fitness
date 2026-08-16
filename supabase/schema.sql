@@ -322,3 +322,11 @@ create policy "custom_foods_owner" on public.custom_foods
 alter table public.schedule_exercises
   add column if not exists superset_group text,
   add column if not exists is_drop_set boolean not null default false;
+
+-- The same two markers on logged sets. Loading a schedule copies the
+-- superset label onto each set it creates, and appends one extra set flagged
+-- is_drop_set when the schedule exercise asks for one. Sets can also be
+-- marked manually from the workout logger.
+alter table public.exercise_sets
+  add column if not exists superset_group text,
+  add column if not exists is_drop_set boolean not null default false;

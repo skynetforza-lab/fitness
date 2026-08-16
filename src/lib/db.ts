@@ -195,6 +195,8 @@ export async function addSet(input: {
   setNumber: number;
   weightKg: number;
   reps: number;
+  supersetGroup?: string | null;
+  isDropSet?: boolean;
 }): Promise<ExerciseSet> {
   const user_id = await uid();
   const { data, error } = await supabase
@@ -206,6 +208,8 @@ export async function addSet(input: {
       set_number: input.setNumber,
       weight_kg: input.weightKg,
       reps: input.reps,
+      superset_group: input.supersetGroup?.trim() || null,
+      is_drop_set: input.isDropSet ?? false,
     })
     .select()
     .single();
@@ -556,14 +560,34 @@ export async function createScheduleFromDate(
   if (sets.length === 0) throw new Error("No sets logged for this date.");
 
   // Group by exercise, preserving the order each exercise first appeared.
+  // Drop sets are recorded as a flag rather than counted as working sets, and
+  // the superset label carries over so the saved template keeps its grouping.
   const order: string[] = [];
-  const groups = new Map<string, { reps: number[]; lastReps: number }>();
+  const groups = new Map<
+    string,
+    {
+      reps: number[];
+      lastReps: number;
+      supersetGroup: string | null;
+      isDropSet: boolean;
+    }
+  >();
   for (const s of sets) {
     if (!groups.has(s.exercise_id)) {
       order.push(s.exercise_id);
-      groups.set(s.exercise_id, { reps: [], lastReps: s.reps });
+      groups.set(s.exercise_id, {
+        reps: [],
+        lastReps: s.reps,
+        supersetGroup: null,
+        isDropSet: false,
+      });
     }
     const g = groups.get(s.exercise_id)!;
+    if (s.superset_group) g.supersetGroup = s.superset_group;
+    if (s.is_drop_set) {
+      g.isDropSet = true;
+      continue;
+    }
     g.reps.push(s.reps);
     g.lastReps = s.reps;
   }
@@ -581,7 +605,16 @@ export async function createScheduleFromDate(
     for (const [r, c] of counts) {
       if (c > modeCount) { modeReps = r; modeCount = c; }
     }
-    await addScheduleExercise(schedule.id, exerciseId, g.reps.length, modeReps, i);
+    await addScheduleExercise(
+      schedule.id,
+      exerciseId,
+      // An exercise that was only ever a drop set still needs one working set.
+      Math.max(g.reps.length, 1),
+      modeReps,
+      i,
+      g.supersetGroup,
+      g.isDropSet,
+    );
   }
 
   return schedule;
