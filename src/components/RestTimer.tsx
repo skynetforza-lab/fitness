@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Plus, X } from "lucide-react";
-import { cn } from "@/lib/cn";
+import { Plus } from "lucide-react";
 
 interface Props {
   /** Starting duration in seconds. */
@@ -9,6 +8,7 @@ interface Props {
   label: string;
   /** Bumped by the parent to restart the countdown for a new set. */
   runKey: number;
+  /** Called on cancel, and automatically when the countdown reaches zero. */
   onDismiss: () => void;
 }
 
@@ -41,6 +41,9 @@ function beep() {
   }
 }
 
+const RADIUS = 52;
+const CIRCUMFERENCE = 2 * Math.PI * RADIUS;
+
 export default function RestTimer({ seconds, label, runKey, onDismiss }: Props) {
   // The deadline is the single source of truth: remaining time is derived from
   // the wall clock, never accumulated from interval ticks. Mobile browsers
@@ -50,6 +53,13 @@ export default function RestTimer({ seconds, label, runKey, onDismiss }: Props) 
   const [endAt, setEndAt] = useState(() => Date.now() + seconds * 1000);
   const [now, setNow] = useState(() => Date.now());
   const firedRef = useRef(false);
+
+  // Keep the latest onDismiss without making it an effect dependency, so the
+  // parent re-rendering can't re-trigger the finish handler.
+  const dismissRef = useRef(onDismiss);
+  useEffect(() => {
+    dismissRef.current = onDismiss;
+  }, [onDismiss]);
 
   // Restart whenever the parent signals a new set, or the duration changes.
   useEffect(() => {
@@ -65,90 +75,83 @@ export default function RestTimer({ seconds, label, runKey, onDismiss }: Props) 
   }, []);
 
   const left = Math.max(0, Math.ceil((endAt - now) / 1000));
-  const done = left === 0;
 
-  // Alert once when the countdown lands on zero.
+  // Alert and close once the countdown lands on zero.
   useEffect(() => {
-    if (done && !firedRef.current) {
+    if (left === 0 && !firedRef.current) {
       firedRef.current = true;
       beep();
       navigator.vibrate?.([200, 100, 200]);
+      dismissRef.current();
     }
-  }, [done]);
+  }, [left]);
 
   const mins = Math.floor(left / 60);
   const secs = left % 60;
-  const pct = total > 0 ? Math.min(100, ((total - left) / total) * 100) : 100;
+  const fraction = total > 0 ? left / total : 0;
 
   function addTime(extra: number) {
     setTotal((t) => t + extra);
-    // Extend from the deadline, or from now if the timer already ran out.
     setEndAt((e) => Math.max(e, Date.now()) + extra * 1000);
     firedRef.current = false;
   }
 
   return (
     <div
-      className={cn(
-        "sticky top-2 z-40 overflow-hidden rounded-xl border shadow-sm transition",
-        done ? "border-emerald-300 bg-emerald-50" : "border-brand-200 bg-white",
-      )}
-      role="status"
-      aria-live="polite"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+      role="dialog"
+      aria-modal="true"
+      aria-label={`${label} timer`}
     >
-      {/* Progress bar */}
-      <div
-        className={cn(
-          "absolute inset-y-0 left-0 transition-all duration-300",
-          done ? "bg-emerald-100" : "bg-brand-50",
-        )}
-        style={{ width: `${pct}%` }}
-        aria-hidden="true"
-      />
+      <div className="w-full max-w-xs rounded-2xl bg-white p-6 text-center shadow-xl">
+        <p className="mb-4 text-xs font-semibold uppercase tracking-wide text-brand-600">
+          {label}
+        </p>
 
-      <div className="relative flex items-center gap-3 px-3 py-2.5">
-        <div className="flex flex-col leading-tight">
-          <span
-            className={cn(
-              "text-[10px] font-semibold uppercase tracking-wide",
-              done ? "text-emerald-600" : "text-brand-600",
-            )}
-          >
-            {done ? "Rest over" : label}
-          </span>
-          <span
-            className={cn(
-              "text-xl font-bold tabular-nums",
-              done ? "text-emerald-700" : "text-slate-800",
-            )}
-          >
-            {mins}:{String(secs).padStart(2, "0")}
-          </span>
+        <div className="relative mx-auto mb-5 h-32 w-32">
+          <svg className="h-full w-full -rotate-90" viewBox="0 0 120 120">
+            <circle
+              cx="60"
+              cy="60"
+              r={RADIUS}
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="8"
+              className="text-slate-100"
+            />
+            <circle
+              cx="60"
+              cy="60"
+              r={RADIUS}
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="8"
+              strokeLinecap="round"
+              className="text-brand-500 transition-[stroke-dashoffset] duration-300"
+              strokeDasharray={CIRCUMFERENCE}
+              strokeDashoffset={CIRCUMFERENCE * (1 - fraction)}
+            />
+          </svg>
+          <div className="absolute inset-0 flex items-center justify-center">
+            <span
+              className="text-4xl font-bold tabular-nums text-slate-800"
+              aria-live="polite"
+            >
+              {mins}:{String(secs).padStart(2, "0")}
+            </span>
+          </div>
         </div>
 
-        <div className="ml-auto flex items-center gap-1.5">
-          {!done && (
-            <button
-              type="button"
-              onClick={() => addTime(15)}
-              className="flex items-center gap-0.5 rounded-lg bg-slate-100 px-2 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-200"
-            >
-              <Plus className="h-3 w-3" />
-              15s
-            </button>
-          )}
+        <div className="flex gap-2">
           <button
             type="button"
-            onClick={onDismiss}
-            className={cn(
-              "flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-semibold transition",
-              done
-                ? "bg-emerald-600 text-white hover:bg-emerald-700"
-                : "bg-slate-100 text-slate-600 hover:bg-slate-200",
-            )}
+            onClick={() => addTime(15)}
+            className="btn-secondary flex-1"
           >
-            {done ? "Done" : <X className="h-3.5 w-3.5" />}
-            {!done && "Skip"}
+            <Plus className="h-4 w-4" /> 15s
+          </button>
+          <button type="button" onClick={onDismiss} className="btn-primary flex-1">
+            Cancel
           </button>
         </div>
       </div>
