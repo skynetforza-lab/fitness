@@ -311,3 +311,14 @@ alter table public.custom_foods enable row level security;
 drop policy if exists "custom_foods_owner" on public.custom_foods;
 create policy "custom_foods_owner" on public.custom_foods
   for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
+
+-- ---------------------------------------------------------------
+-- Supersets & drop sets on schedule exercises
+-- ---------------------------------------------------------------
+-- superset_group: free-text label (e.g. "A") shared by 2+ exercises in the
+-- same schedule that should be performed back-to-back with no rest between.
+-- is_drop_set: marks the exercise's final set as a drop set (reduce weight,
+-- continue without rest).
+alter table public.schedule_exercises
+  add column if not exists superset_group text,
+  add column if not exists is_drop_set boolean not null default false;

@@ -286,6 +286,8 @@ export async function addScheduleExercise(
   setCount: number,
   defaultReps: number,
   position: number,
+  supersetGroup: string | null = null,
+  isDropSet: boolean = false,
 ): Promise<ScheduleExercise> {
   const { data, error } = await supabase
     .from("schedule_exercises")
@@ -295,7 +297,28 @@ export async function addScheduleExercise(
       set_count: setCount,
       default_reps: defaultReps,
       position,
+      superset_group: supersetGroup?.trim() || null,
+      is_drop_set: isDropSet,
     })
+    .select()
+    .single();
+  if (error) throw error;
+  return data as ScheduleExercise;
+}
+
+export async function updateScheduleExercise(
+  id: string,
+  patch: { supersetGroup?: string | null; isDropSet?: boolean },
+): Promise<ScheduleExercise> {
+  const update: Record<string, unknown> = {};
+  if (patch.supersetGroup !== undefined) {
+    update.superset_group = patch.supersetGroup?.trim() || null;
+  }
+  if (patch.isDropSet !== undefined) update.is_drop_set = patch.isDropSet;
+  const { data, error } = await supabase
+    .from("schedule_exercises")
+    .update(update)
+    .eq("id", id)
     .select()
     .single();
   if (error) throw error;

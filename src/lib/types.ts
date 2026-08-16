@@ -165,5 +165,10 @@ export interface ScheduleExercise {
   position: number;
   set_count: number;
   default_reps: number;
+  // Free-text label (e.g. "A") shared by exercises meant to be done
+  // back-to-back as a superset. Null/empty = not part of a superset.
+  superset_group: string | null;
+  // Marks this exercise's final set as a drop set.
+  is_drop_set: boolean;
   exercise?: Pick<Exercise, "id" | "name" | "muscle_group">;
 }

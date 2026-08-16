@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { ChevronDown, ChevronRight, Plus, Trash2 } from "lucide-react";
+import { ChevronDown, ChevronRight, Layers, Plus, Trash2, TrendingDown } from "lucide-react";
 import {
   createExercise,
   deleteExercise,
@@ -10,6 +10,7 @@ import {
   fetchScheduleExercises,
   addScheduleExercise,
   removeScheduleExercise,
+  updateScheduleExercise,
 } from "@/lib/db";
 import { MUSCLE_GROUPS, type MuscleGroup } from "@/lib/presets";
 import type { Exercise, WorkoutSchedule, ScheduleExercise } from "@/lib/types";
@@ -155,6 +156,79 @@ function LibraryTab() {
   );
 }
 
+// ─── Schedule exercise row (superset group + drop set editable inline) ──────
+
+function ScheduleItemRow({
+  item,
+  onRemove,
+  onToggleDropSet,
+  onSetSupersetGroup,
+}: {
+  item: ScheduleExercise;
+  onRemove: () => void;
+  onToggleDropSet: () => void;
+  onSetSupersetGroup: (value: string) => void;
+}) {
+  const [group, setGroup] = useState(item.superset_group ?? "");
+
+  // Keep local state in sync if parent prop updates
+  useEffect(() => setGroup(item.superset_group ?? ""), [item.superset_group]);
+
+  function commitGroup() {
+    if (group.trim() === (item.superset_group ?? "")) return;
+    onSetSupersetGroup(group);
+  }
+
+  return (
+    <li className="flex flex-col gap-1.5 py-2 text-sm">
+      <div className="flex items-center justify-between">
+        <span className="font-medium">{item.exercise?.name ?? "—"}</span>
+        <div className="flex items-center gap-3">
+          <span className="text-slate-500">
+            {item.set_count} × {item.default_reps} reps
+          </span>
+          <button
+            type="button"
+            onClick={onRemove}
+            className="rounded p-1 text-slate-400 hover:bg-rose-50 hover:text-rose-600"
+            aria-label="Remove"
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      </div>
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="flex items-center gap-1">
+          <Layers className="h-3 w-3 text-purple-500" />
+          <input
+            type="text"
+            value={group}
+            onChange={(e) => setGroup(e.target.value)}
+            onBlur={commitGroup}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+            }}
+            placeholder="Superset (e.g. A)"
+            className="w-32 rounded border border-slate-200 bg-white px-1.5 py-0.5 text-xs focus:border-purple-400 focus:outline-none focus:ring-1 focus:ring-purple-200"
+          />
+        </div>
+        <button
+          type="button"
+          onClick={onToggleDropSet}
+          className={cn(
+            "flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium transition",
+            item.is_drop_set
+              ? "bg-orange-100 text-orange-700"
+              : "bg-slate-100 text-slate-500 hover:bg-slate-200",
+          )}
+        >
+          <TrendingDown className="h-3 w-3" /> Drop set
+        </button>
+      </div>
+    </li>
+  );
+}
+
 // ─── Single schedule accordion ───────────────────────────────────────────────
 
 function ScheduleCard({
@@ -172,6 +246,8 @@ function ScheduleCard({
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [setCount, setSetCount] = useState(3);
   const [defaultReps, setDefaultReps] = useState(10);
+  const [supersetGroup, setSupersetGroup] = useState("");
+  const [isDropSet, setIsDropSet] = useState(false);
   const [addBusy, setAddBusy] = useState(false);
   const [localExercises, setLocalExercises] = useState<Exercise[]>(exercises);
 
@@ -202,6 +278,8 @@ function ScheduleCard({
         setCount,
         defaultReps,
         items.length,
+        supersetGroup,
+        isDropSet,
       );
       const ex = localExercises.find((e) => e.id === selectedId);
       setItems((prev) => [
@@ -209,6 +287,8 @@ function ScheduleCard({
         { ...created, exercise: ex ? { id: ex.id, name: ex.name, muscle_group: ex.muscle_group } : undefined },
       ]);
       setSelectedId(null);
+      setSupersetGroup("");
+      setIsDropSet(false);
     } finally {
       setAddBusy(false);
     }
@@ -217,6 +297,20 @@ function ScheduleCard({
   async function handleRemove(id: string) {
     await removeScheduleExercise(id);
     setItems((prev) => prev.filter((i) => i.id !== id));
+  }
+
+  async function handleToggleDropSet(item: ScheduleExercise) {
+    const updated = await updateScheduleExercise(item.id, { isDropSet: !item.is_drop_set });
+    setItems((prev) =>
+      prev.map((i) => (i.id === item.id ? { ...i, is_drop_set: updated.is_drop_set } : i)),
+    );
+  }
+
+  async function handleSetSupersetGroup(item: ScheduleExercise, value: string) {
+    const updated = await updateScheduleExercise(item.id, { supersetGroup: value });
+    setItems((prev) =>
+      prev.map((i) => (i.id === item.id ? { ...i, superset_group: updated.superset_group } : i)),
+    );
   }
 
   async function handleDeleteSchedule() {
@@ -254,22 +348,13 @@ function ScheduleCard({
           ) : (
             <ul className="divide-y divide-slate-100">
               {items.map((item) => (
-                <li key={item.id} className="flex items-center justify-between py-2 text-sm">
-                  <span className="font-medium">{item.exercise?.name ?? "—"}</span>
-                  <div className="flex items-center gap-3">
-                    <span className="text-slate-500">
-                      {item.set_count} × {item.default_reps} reps
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => handleRemove(item.id)}
-                      className="rounded p-1 text-slate-400 hover:bg-rose-50 hover:text-rose-600"
-                      aria-label="Remove"
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </button>
-                  </div>
-                </li>
+                <ScheduleItemRow
+                  key={item.id}
+                  item={item}
+                  onRemove={() => handleRemove(item.id)}
+                  onToggleDropSet={() => handleToggleDropSet(item)}
+                  onSetSupersetGroup={(value) => handleSetSupersetGroup(item, value)}
+                />
               ))}
             </ul>
           )}
@@ -313,6 +398,25 @@ function ScheduleCard({
                 onChange={(e) => setDefaultReps(Number(e.target.value))}
               />
             </div>
+            <div>
+              <label className="label">Superset</label>
+              <input
+                type="text"
+                placeholder="e.g. A"
+                className="input w-24"
+                value={supersetGroup}
+                onChange={(e) => setSupersetGroup(e.target.value)}
+              />
+            </div>
+            <label className="flex items-center gap-1.5 pb-2 text-xs font-medium text-slate-600">
+              <input
+                type="checkbox"
+                checked={isDropSet}
+                onChange={(e) => setIsDropSet(e.target.checked)}
+                className="h-3.5 w-3.5 rounded border-slate-300 text-brand-600 focus:ring-brand-400"
+              />
+              Drop set
+            </label>
             <button
               type="submit"
               disabled={addBusy || !selectedId}
@@ -321,6 +425,11 @@ function ScheduleCard({
               <Plus className="h-4 w-4" /> Add
             </button>
           </form>
+          <p className="text-xs text-slate-400">
+            Give two or more exercises the same superset label (e.g. "A") to
+            group them back-to-back. Mark "Drop set" to flag an exercise's
+            last set as a drop set.
+          </p>
 
           {/* Delete schedule */}
           <div className="pt-2 flex justify-end">
